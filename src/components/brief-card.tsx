@@ -1,16 +1,8 @@
 'use client'
 
-type Brief = {
-  id: string
-  title: string
-  brief: string
-  status: string
-  outcome_tier: number
-  outcome_type: string
-  impact_score: number
-  project_id: string
-  created_at: string
-}
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import type { Brief } from '@/lib/types'
 
 const TIER_COLORS: Record<number, string> = {
   1: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
@@ -19,30 +11,79 @@ const TIER_COLORS: Record<number, string> = {
   4: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
 }
 
-const TIER_NAMES: Record<number, string> = {
-  1: 'Foundation',
-  2: 'Leverage',
-  3: 'Growth',
-  4: 'Reach',
-}
-
-export function BriefCard({ brief }: { brief: Brief }) {
+export function BriefCardContent({ brief, projectName }: { brief: Brief; projectName?: string }) {
   return (
     <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-700 hover:border-zinc-600 transition-colors cursor-pointer">
       <div className="flex items-start justify-between gap-2 mb-2">
         <h3 className="font-medium text-sm leading-tight">{brief.title}</h3>
-        <span className={`text-xs px-1.5 py-0.5 rounded border ${TIER_COLORS[brief.outcome_tier]}`}>
-          T{brief.outcome_tier}
-        </span>
+        {brief.outcome_tier && (
+          <span className={`text-xs px-1.5 py-0.5 rounded border shrink-0 ${TIER_COLORS[brief.outcome_tier] || ''}`}>
+            T{brief.outcome_tier}
+          </span>
+        )}
       </div>
       <p className="text-xs text-zinc-400 line-clamp-2 mb-3">{brief.brief}</p>
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-zinc-500 capitalize">{brief.project_id}</span>
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-zinc-500">Impact:</span>
-          <span className="text-xs font-medium text-orange-400">{brief.impact_score}/10</span>
+      {(brief.status === 'evaluating' || (brief.status === 'building' && brief.pipeline_stage)) && (
+        <div className="flex items-center gap-1.5 mb-2 text-xs text-amber-400">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          {brief.pipeline_stage === 'gatekeeper' ? 'Gatekeeper...' :
+           brief.pipeline_stage === 'skeptic' ? 'Skeptic...' :
+           brief.pipeline_stage === 'voting' ? 'Voting...' :
+           brief.pipeline_stage === 'planning' ? 'Planning...' :
+           brief.pipeline_stage === 'building' ? 'Building...' :
+           brief.pipeline_stage === 'build_complete' ? 'Build complete' :
+           brief.status === 'evaluating' ? 'Evaluating...' :
+           'Processing...'}
         </div>
+      )}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-zinc-500">{projectName || 'Unassigned'}</span>
+        {brief.impact_score && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-zinc-500">Impact:</span>
+            <span className="text-xs font-medium text-orange-400">{brief.impact_score}/10</span>
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+export function SortableBriefCard({
+  brief,
+  projectName,
+  onClick,
+}: {
+  brief: Brief
+  projectName?: string
+  onClick?: () => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: brief.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={() => {
+        if (!isDragging && onClick) onClick()
+      }}
+    >
+      <BriefCardContent brief={brief} projectName={projectName} />
     </div>
   )
 }

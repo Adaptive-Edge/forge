@@ -1,12 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-
-const PROJECTS = [
-  { id: 'forge', name: 'Forge' },
-  { id: 'strategyos', name: 'StrategyOS' },
-  { id: 'arjo', name: 'Arjo' },
-]
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase'
+import type { Project } from '@/lib/types'
 
 const OUTCOME_TIERS = [
   { value: 1, name: 'Tier 1: Foundation', description: 'Health, Family' },
@@ -23,26 +19,62 @@ const OUTCOME_TYPES: Record<number, string[]> = {
 }
 
 export function NewBriefModal({ onClose }: { onClose: () => void }) {
+  const [projects, setProjects] = useState<Project[]>([])
   const [title, setTitle] = useState('')
   const [brief, setBrief] = useState('')
-  const [projectId, setProjectId] = useState('strategyos')
+  const [projectId, setProjectId] = useState('')
   const [outcomeTier, setOutcomeTier] = useState(2)
   const [outcomeType, setOutcomeType] = useState('Productivity & Time')
   const [impactScore, setImpactScore] = useState(5)
   const [criteria, setCriteria] = useState<string[]>([''])
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.from('projects').select('*').order('name').then(({ data }) => {
+      if (data) {
+        setProjects(data)
+        if (data.length > 0) setProjectId(data[0].id)
+      }
+    })
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Submit to Supabase
-    console.log({
-      title,
-      brief,
-      projectId,
-      outcomeTier,
-      outcomeType,
-      impactScore,
-      criteria: criteria.filter(c => c.trim()),
-    })
+    setSubmitting(true)
+
+    const supabase = createClient()
+    const { data: newBrief, error } = await supabase
+      .from('briefs')
+      .insert({
+        title,
+        brief,
+        project_id: projectId || null,
+        outcome_tier: outcomeTier,
+        outcome_type: outcomeType,
+        impact_score: impactScore,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Failed to create brief:', error)
+      setSubmitting(false)
+      return
+    }
+
+    // Insert acceptance criteria
+    const validCriteria = criteria.filter(c => c.trim())
+    if (validCriteria.length > 0 && newBrief) {
+      await supabase.from('acceptance_criteria').insert(
+        validCriteria.map((c, i) => ({
+          brief_id: newBrief.id,
+          criterion: c.trim(),
+          sort_order: i,
+        }))
+      )
+    }
+
     onClose()
   }
 
@@ -98,7 +130,7 @@ export function NewBriefModal({ onClose }: { onClose: () => void }) {
               onChange={e => setProjectId(e.target.value)}
               className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500"
             >
-              {PROJECTS.map(p => (
+              {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
@@ -195,9 +227,10 @@ export function NewBriefModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg text-sm font-medium transition-colors"
+              disabled={submitting}
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
             >
-              Submit Brief
+              {submitting ? 'Submitting...' : 'Submit Brief'}
             </button>
           </div>
         </form>

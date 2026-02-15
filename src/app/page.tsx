@@ -1,9 +1,10 @@
 import { KanbanBoard } from '@/components/kanban-board'
 import { NewBriefButton } from '@/components/new-brief-button'
+import { SystemStatus } from '@/components/system-status'
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-zinc-950 text-white">
+    <div className="min-h-screen bg-zinc-950 text-white flex flex-col">
       <header className="border-b border-zinc-800 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -15,9 +16,10 @@ export default function Home() {
           <NewBriefButton />
         </div>
       </header>
-      <main className="p-6">
+      <main className="flex-1 p-6">
         <KanbanBoard />
       </main>
+      <SystemStatus />
     </div>
   )
 }
