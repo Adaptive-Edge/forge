@@ -42,7 +42,7 @@ export async function runGatekeeper(brief: BriefWithProject): Promise<Evaluation
   await logBuild(
     brief.id,
     'Gatekeeper',
-    `${emoji} Brief ${result.verdict}ed \u2014 ${result.reasoning}`,
+    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
     result.verdict === 'reject' ? 'warn' : 'info',
     result as unknown as Record<string, unknown>
   )
@@ -68,7 +68,7 @@ export async function runSkeptic(brief: BriefWithProject): Promise<EvaluationRes
   await logBuild(
     brief.id,
     'Skeptic',
-    `${emoji} Brief ${result.verdict}ed \u2014 ${result.reasoning}`,
+    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
     result.verdict === 'reject' ? 'warn' : 'info',
     result as unknown as Record<string, unknown>
   )
