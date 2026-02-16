@@ -2,9 +2,9 @@ import { callClaude } from './claude'
 import {
   logBuild, updateBrief, fetchBriefWithProject,
   writeDeliberationRound, fetchDeliberationRounds, writeDecisionReport,
-  writeEvaluation,
+  writeEvaluation, fetchBriefHistory,
 } from './supabase'
-import { architectPrompt, architectRevisionPrompt, builderPrompt, criticPrompt, deliberationPrompt } from './prompts'
+import { architectPrompt, architectRevisionPrompt, architectFeedbackPrompt, builderPrompt, criticPrompt, deliberationPrompt } from './prompts'
 import { runGatekeeper, runSkeptic, runCynic, runAccountant, parseEvaluation } from './evaluators'
 import type { EvaluationResult, Verdict } from './types'
 
@@ -24,6 +24,15 @@ export async function runEvaluation(briefId: string): Promise<boolean> {
     return false
   }
 
+  // Fetch brief history once for all agents
+  let history: Awaited<ReturnType<typeof fetchBriefHistory>> | undefined
+  try {
+    history = await fetchBriefHistory()
+    console.log(`  [Pipeline] Loaded ${history.length} historical briefs for agent context`)
+  } catch {
+    console.log('  [Pipeline] Could not fetch brief history, proceeding without it')
+  }
+
   // --- Round 1: All 4 agents evaluate independently in parallel ---
   await updateBrief(briefId, { pipeline_stage: 'gatekeeper' })
   await logBuild(briefId, 'Pipeline', 'Round 1: 4 agents evaluating independently...')
@@ -31,7 +40,7 @@ export async function runEvaluation(briefId: string): Promise<boolean> {
 
   const settled = await Promise.allSettled(
     EVALUATOR_AGENTS.map(async (agent) => {
-      const result = await agent.runner(brief)
+      const result = await agent.runner(brief, history)
       return { slug: agent.slug, result }
     })
   )
@@ -338,6 +347,42 @@ export async function runBuilding(briefId: string): Promise<boolean> {
     await updateBrief(briefId, { status: 'review', pipeline_stage: null })
     return false
   }
+}
+
+export async function runRevision(briefId: string, feedback: string, revisionNumber: number): Promise<void> {
+  console.log(`\n--- Pipeline: revision ${revisionNumber} for brief ${briefId} ---`)
+
+  await updateBrief(briefId, { status: 'building', pipeline_stage: 'planning' })
+  const brief = await fetchBriefWithProject(briefId)
+
+  if (!brief.architect_plan) {
+    await logBuild(briefId, 'Pipeline', 'No existing plan to revise — running full planning', 'warn')
+    await runPlanning(briefId)
+  } else {
+    // Architect revises plan based on Nathan's feedback
+    await logBuild(briefId, 'Architect', `Revising plan based on feedback (revision ${revisionNumber})...`)
+    console.log(`  [Architect] Revising plan (v${revisionNumber + 1})...`)
+
+    try {
+      const revisedPlan = await callClaude(
+        architectFeedbackPrompt(brief, brief.architect_plan, feedback, revisionNumber),
+        { model: 'sonnet' }
+      )
+
+      await updateBrief(briefId, { architect_plan: revisedPlan })
+      await logBuild(briefId, 'Architect', `Plan revised (v${revisionNumber + 1}) addressing Nathan's feedback`)
+      console.log(`  [Architect] Plan revised (v${revisionNumber + 1})`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      await logBuild(briefId, 'Architect', `Revision planning failed: ${msg}`, 'error')
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      return
+    }
+  }
+
+  // Skip to build (no evaluation or critic review for revisions)
+  await runBuilding(briefId)
+  console.log('  [Pipeline] Revision complete')
 }
 
 export async function advancePipeline(briefId: string): Promise<void> {

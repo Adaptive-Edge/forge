@@ -1,6 +1,6 @@
 import { callClaude } from './claude'
 import { logBuild, writeEvaluation } from './supabase'
-import { gatekeeperPrompt, skepticPrompt, cynicPrompt, accountantPrompt } from './prompts'
+import { gatekeeperPrompt, skepticPrompt, cynicPrompt, accountantPrompt, type BriefHistoryItem } from './prompts'
 import type { BriefWithProject, EvaluationResult } from './types'
 
 function parseEvaluation(output: string): EvaluationResult {
@@ -21,11 +21,11 @@ function parseEvaluation(output: string): EvaluationResult {
   }
 }
 
-export async function runGatekeeper(brief: BriefWithProject): Promise<EvaluationResult> {
+export async function runGatekeeper(brief: BriefWithProject, history?: BriefHistoryItem[]): Promise<EvaluationResult> {
   await logBuild(brief.id, 'Gatekeeper', 'Evaluating brief against outcome hierarchy...')
   console.log('  [Gatekeeper] Evaluating...')
 
-  const output = await callClaude(gatekeeperPrompt(brief))
+  const output = await callClaude(gatekeeperPrompt(brief, history))
   const result = parseEvaluation(output)
 
   await writeEvaluation(brief.id, 'gatekeeper', 'strategic_filter', {
@@ -51,7 +51,7 @@ export async function runGatekeeper(brief: BriefWithProject): Promise<Evaluation
   return result
 }
 
-export async function runSkeptic(brief: BriefWithProject): Promise<EvaluationResult> {
+export async function runSkeptic(brief: BriefWithProject, _history?: BriefHistoryItem[]): Promise<EvaluationResult> {
   await logBuild(brief.id, 'Skeptic', 'Challenging brief assumptions...')
   console.log('  [Skeptic] Evaluating...')
 
@@ -77,11 +77,11 @@ export async function runSkeptic(brief: BriefWithProject): Promise<EvaluationRes
   return result
 }
 
-export async function runCynic(brief: BriefWithProject): Promise<EvaluationResult> {
+export async function runCynic(brief: BriefWithProject, history?: BriefHistoryItem[]): Promise<EvaluationResult> {
   await logBuild(brief.id, 'Cynic', 'Checking for patterns and displacement activity...')
   console.log('  [Cynic] Evaluating...')
 
-  const output = await callClaude(cynicPrompt(brief))
+  const output = await callClaude(cynicPrompt(brief, history))
   const result = parseEvaluation(output)
 
   await writeEvaluation(brief.id, 'cynic', 'behavioural_check', {
@@ -103,11 +103,11 @@ export async function runCynic(brief: BriefWithProject): Promise<EvaluationResul
   return result
 }
 
-export async function runAccountant(brief: BriefWithProject): Promise<EvaluationResult> {
+export async function runAccountant(brief: BriefWithProject, history?: BriefHistoryItem[]): Promise<EvaluationResult> {
   await logBuild(brief.id, 'Accountant', 'Calculating cost vs return...')
   console.log('  [Accountant] Evaluating...')
 
-  const output = await callClaude(accountantPrompt(brief))
+  const output = await callClaude(accountantPrompt(brief, history))
   const result = parseEvaluation(output)
 
   await writeEvaluation(brief.id, 'accountant', 'cost_analysis', {

@@ -1,5 +1,61 @@
 import type { BriefWithProject, EvaluationResult } from './types'
 
+export type BriefHistoryItem = {
+  title: string
+  status: string
+  tier: number | null
+  impact: number | null
+  weighted_score: number | null
+  decision: string | null
+  estimated_hours: number | null
+  actual_hours: number | null
+  created_at: string
+}
+
+function formatHistoryForCynic(history: BriefHistoryItem[]): string {
+  if (history.length === 0) return ''
+
+  const lines = history.map(h => {
+    const decision = h.decision || h.status
+    const date = new Date(h.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    return `- "${h.title}" (${date}) — ${decision}, Tier ${h.tier || '?'}`
+  })
+
+  return `\n\n## Nathan's Recent Brief History (use for pattern detection):
+${lines.join('\n')}
+
+Look for: repeated themes, abandoned projects, similar briefs that were rejected, scope creep patterns.`
+}
+
+function formatHistoryForAccountant(history: BriefHistoryItem[]): string {
+  if (history.length === 0) return ''
+
+  const withHours = history.filter(h => h.estimated_hours || h.actual_hours)
+  if (withHours.length === 0) {
+    return `\n\n## Past Brief Data:
+${history.length} briefs submitted recently. No time tracking data available yet — estimates are uncalibrated.`
+  }
+
+  const lines = withHours.map(h => {
+    const est = h.estimated_hours ? `${h.estimated_hours}h estimated` : 'no estimate'
+    const act = h.actual_hours ? `${h.actual_hours}h actual` : 'no actual recorded'
+    return `- "${h.title}" — ${est}, ${act}`
+  })
+
+  return `\n\n## Past Estimates vs Actuals (use to calibrate your predictions):
+${lines.join('\n')}`
+}
+
+function formatHistoryForGatekeeper(history: BriefHistoryItem[]): string {
+  if (history.length === 0) return ''
+
+  const inProgress = history.filter(h => h.status === 'building' || h.status === 'evaluating' || h.status === 'review')
+  const summary = `${history.length} total briefs, ${inProgress.length} currently in progress.`
+
+  return `\n\n## Current Workload Context:
+${summary} Consider whether adding another brief is wise given Nathan's existing commitments.`
+}
+
 const OUTCOME_TIERS: Record<number, string> = {
   1: 'Foundation (Health, Family)',
   2: 'Leverage (Productivity, Efficiency)',
@@ -7,7 +63,7 @@ const OUTCOME_TIERS: Record<number, string> = {
   4: 'Reach (Brand, Customer Attraction)',
 }
 
-export function gatekeeperPrompt(brief: BriefWithProject): string {
+export function gatekeeperPrompt(brief: BriefWithProject, history?: BriefHistoryItem[]): string {
   return `You are the Gatekeeper agent for The Forge, a personal build system owned by Nathan, a strategy consultant who runs Adaptive Edge. Your job is to evaluate briefs against a 4-tier outcome hierarchy and decide whether they should be built.
 
 ## Outcome Hierarchy (higher tiers = more fundamental, protect these first):
@@ -31,7 +87,7 @@ export function gatekeeperPrompt(brief: BriefWithProject): string {
 - Claimed Outcome Tier: Tier ${brief.outcome_tier} — ${OUTCOME_TIERS[brief.outcome_tier || 0] || 'Unknown'}
 - Claimed Outcome Type: ${brief.outcome_type || 'Not specified'}
 - Claimed Impact Score: ${brief.impact_score}/10
-
+${history ? formatHistoryForGatekeeper(history) : ''}
 Respond with ONLY valid JSON (no markdown fences, no commentary, no extra text before or after):
 {"verdict":"approve","reasoning":"2-3 sentences explaining your decision","suggested_tier":2,"suggested_impact":7,"confidence":8}`
 }
@@ -65,7 +121,7 @@ Respond with ONLY valid JSON (no markdown fences, no commentary, no extra text b
 {"verdict":"reject","reasoning":"2-3 sentences. Be specific about what's wrong. Name the checklist item(s) that failed.","confidence":7}`
 }
 
-export function cynicPrompt(brief: BriefWithProject): string {
+export function cynicPrompt(brief: BriefWithProject, history?: BriefHistoryItem[]): string {
   return `You are The Cynic agent for The Forge, Nathan's personal build system. You've watched Nathan build 15+ apps across Adaptive Edge. You spot patterns: shiny object syndrome, scope creep, building tools instead of using them, avoiding client work by coding.
 
 ## Your Job:
@@ -88,12 +144,12 @@ Ask yourself these questions about every brief:
 - Project: ${brief.project?.name || 'Unassigned'}
 - Claimed Outcome Tier: Tier ${brief.outcome_tier || '?'}
 - Claimed Impact Score: ${brief.impact_score || '?'}/10
-
+${history ? formatHistoryForCynic(history) : ''}
 Respond with ONLY valid JSON (no markdown fences, no commentary, no extra text before or after):
 {"verdict":"concern","reasoning":"2-3 sentences. Reference specific patterns you've seen. Be personal, not abstract.","confidence":6}`
 }
 
-export function accountantPrompt(brief: BriefWithProject): string {
+export function accountantPrompt(brief: BriefWithProject, history?: BriefHistoryItem[]): string {
   return `You are The Accountant agent for The Forge, Nathan's personal build system. You care about hours, not vibes. Every brief has a cost in time, and Nathan's time is finite. Your job is to do the maths.
 
 ## Your Analysis Framework:
@@ -116,7 +172,7 @@ export function accountantPrompt(brief: BriefWithProject): string {
 - Project: ${brief.project?.name || 'Unassigned'}
 - Claimed Outcome Tier: Tier ${brief.outcome_tier || '?'}
 - Claimed Impact Score: ${brief.impact_score || '?'}/10
-
+${history ? formatHistoryForAccountant(history) : ''}
 Respond with ONLY valid JSON (no markdown fences, no commentary, no extra text before or after):
 {"verdict":"concern","reasoning":"2-3 sentences with specific hour estimates and ROI calculation.","confidence":7}`
 }
@@ -220,9 +276,54 @@ How to test this works.
 What changed and why (address the Critic's feedback).`
 }
 
+export function architectFeedbackPrompt(
+  brief: BriefWithProject,
+  currentPlan: string,
+  feedback: string,
+  revisionNumber: number
+): string {
+  return `You are the Architect agent for The Forge. Nathan has reviewed the build output and requested changes. Revise the plan to address his feedback.
+
+## Brief:
+- Title: ${brief.title}
+- Description: ${brief.brief}
+
+## Current Plan (v${revisionNumber}):
+${currentPlan}
+
+## Nathan's Feedback:
+${feedback}
+
+## Your Task:
+Revise the plan to address Nathan's feedback. He's reviewed the actual build output (PR, code), so his feedback is based on real results, not hypotheticals. Take his requests literally — he knows what he wants.
+
+IMPORTANT: Start your response IMMEDIATELY with "## Files" — no preamble. Jump straight into the revised plan.
+
+## Required format:
+
+## Files
+- \`path/to/file.ts\` — what to do to this file
+
+## Approach
+Concrete steps, not abstract descriptions.
+
+## Key Decisions
+Choices made and why.
+
+## Risks
+What could go wrong.
+
+## Verification
+How to test this works.
+
+## Changes from v${revisionNumber}
+What changed and why (address Nathan's feedback).`
+}
+
 export function architectPrompt(brief: BriefWithProject): string {
   const repoUrl = brief.project?.repo_url || brief.repo_url || 'Not specified'
   const branch = brief.project?.default_branch || 'main'
+  const deploymentNotes = brief.project?.deployment_notes
 
   return `You are the Architect agent for The Forge, Nathan's personal build system. Your job is to design a clear, actionable implementation plan for a brief that has been approved by evaluators.
 
@@ -230,6 +331,7 @@ export function architectPrompt(brief: BriefWithProject): string {
 - Project: ${brief.project?.name || 'Unassigned'}
 - Repository: ${repoUrl}
 - Default Branch: ${branch}
+${deploymentNotes ? `- Deployment Notes: ${deploymentNotes}` : ''}
 
 ## Brief:
 - Title: ${brief.title}
@@ -245,12 +347,16 @@ Create a structured implementation plan. Be specific about:
 4. **Risks** — what could go wrong, edge cases to handle
 5. **Testing** — how to verify the implementation works
 
+## Deployment Constraint:
+The Builder agent can only create code and pull requests. It CANNOT deploy. Your plan must end with "create a PR for Nathan to review" — never with deployment steps. Nathan reviews PRs and deploys manually following his own deployment protocol.
+
 ## Rules:
 - Keep plans practical and focused. No over-engineering.
 - If the brief is vague, fill in sensible defaults but call out assumptions.
 - Plans should be executable by an AI builder agent — be explicit, not abstract.
 - Prefer editing existing files over creating new ones.
 - Consider the project's existing patterns and conventions.
+- The final deliverable is always a PR, never a deployment.
 
 IMPORTANT: Start your response IMMEDIATELY with "## Files" — no preamble, no "Let me think about this", no introduction. Jump straight into the plan.
 
@@ -289,6 +395,14 @@ ${plan}
 - Create a new branch: \`${branch}\`
 - Make atomic commits with clear messages
 - Push the branch and create a PR when done
+
+## Deployment Protocol — CRITICAL SAFETY RULES:
+- NEVER run npm install, npm run build, or pm2 restart on the server
+- NEVER rsync or copy build files to the server
+- NEVER modify server files directly
+- NEVER run database migrations
+- Your job ENDS at PR creation. Nathan reviews and deploys manually.
+- If the plan mentions deployment steps, SKIP them and note "Deployment is Nathan's responsibility" in the PR body.
 
 ## Rules:
 - Follow the plan closely. If you need to deviate, explain why in a commit message.

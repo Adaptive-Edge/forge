@@ -69,7 +69,7 @@ export async function fetchBriefWithProject(briefId: string) {
   if (brief.project_id) {
     const { data } = await supabase
       .from('projects')
-      .select('name, repo_url, default_branch')
+      .select('name, repo_url, default_branch, deployment_notes')
       .eq('id', brief.project_id)
       .single()
     project = data
@@ -110,6 +110,39 @@ export async function fetchDeliberationRounds(briefId: string, round?: number) {
   const { data, error } = await query
   if (error) throw new Error(`Failed to fetch deliberation rounds: ${error.message}`)
   return data || []
+}
+
+export async function fetchBriefHistory(limit = 20) {
+  const { data: briefs, error } = await supabase
+    .from('briefs')
+    .select('id, title, status, outcome_tier, impact_score, estimated_hours, actual_hours, created_at, pipeline_stage')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw new Error(`Failed to fetch brief history: ${error.message}`)
+
+  // Fetch decision reports for these briefs
+  const briefIds = (briefs || []).map(b => b.id)
+  const { data: reports } = await supabase
+    .from('decision_reports')
+    .select('brief_id, decision, weighted_score')
+    .in('brief_id', briefIds)
+
+  const reportMap = new Map(
+    (reports || []).map(r => [r.brief_id, r])
+  )
+
+  return (briefs || []).map(b => ({
+    title: b.title,
+    status: b.status,
+    tier: b.outcome_tier,
+    impact: b.impact_score,
+    weighted_score: reportMap.get(b.id)?.weighted_score || null,
+    decision: reportMap.get(b.id)?.decision || null,
+    estimated_hours: b.estimated_hours,
+    actual_hours: b.actual_hours,
+    created_at: b.created_at,
+  }))
 }
 
 export async function writeDecisionReport(

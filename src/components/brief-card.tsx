@@ -23,10 +23,11 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
         )}
       </div>
       <p className="text-xs text-zinc-400 line-clamp-2 mb-3">{brief.brief}</p>
-      {(brief.status === 'evaluating' || (brief.status === 'building' && brief.pipeline_stage)) && (
+      {(brief.status === 'evaluating' || brief.status === 'revising' || (brief.status === 'building' && brief.pipeline_stage)) && (
         <div className="flex items-center gap-1.5 mb-2 text-xs text-amber-400">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-          {brief.pipeline_stage === 'gatekeeper' ? 'Evaluating...' :
+          {brief.status === 'revising' ? 'Revising...' :
+           brief.pipeline_stage === 'gatekeeper' ? 'Evaluating...' :
            brief.pipeline_stage === 'skeptic' ? 'Skeptic...' :
            brief.pipeline_stage === 'deliberating' ? 'Deliberating...' :
            brief.pipeline_stage === 'voting' ? 'Voting...' :

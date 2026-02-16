@@ -54,6 +54,8 @@ export function BriefDetailPanel({
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>([])
   const [deliberationRounds, setDeliberationRounds] = useState<DeliberationRound[]>([])
   const [decisionReport, setDecisionReport] = useState<DecisionReport | null>(null)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [submittingFeedback, setSubmittingFeedback] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -197,6 +199,38 @@ export function BriefDetailPanel({
     setActiveTab('agents')
   }
 
+  const handleRequestChanges = async () => {
+    if (!feedbackText.trim()) return
+    setSubmittingFeedback(true)
+
+    const supabase = createClient()
+
+    // Count existing revisions for this brief
+    const { count } = await supabase
+      .from('revision_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('brief_id', brief.id)
+
+    const revisionNumber = (count || 0) + 1
+
+    // Insert revision request (orchestrator watches this table)
+    const { error } = await supabase
+      .from('revision_requests')
+      .insert({
+        brief_id: brief.id,
+        feedback: feedbackText.trim(),
+        revision_number: revisionNumber,
+      })
+
+    if (error) {
+      console.error('Failed to submit revision request:', error)
+    } else {
+      setFeedbackText('')
+      setActiveTab('logs')
+    }
+    setSubmittingFeedback(false)
+  }
+
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -255,7 +289,7 @@ export function BriefDetailPanel({
           </div>
 
           {/* Pipeline progress */}
-          {brief.pipeline_stage && (brief.status === 'evaluating' || brief.status === 'building') && (
+          {brief.pipeline_stage && (brief.status === 'evaluating' || brief.status === 'building' || brief.status === 'revising') && (
             <div className="flex items-center gap-2 mt-3 text-xs">
               {PIPELINE_STAGES.map((stage, i) => {
                 const currentIdx = PIPELINE_STAGES.indexOf(brief.pipeline_stage || '')
@@ -396,12 +430,34 @@ export function BriefDetailPanel({
                 </div>
               </div>
 
+              {/* Feedback / Request Changes (visible in review status) */}
+              {brief.status === 'review' && brief.architect_plan && (
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-400 mb-2">Request Changes</h3>
+                  <textarea
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder="Describe what needs to change..."
+                    rows={3}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:border-orange-500 resize-none"
+                  />
+                  <button
+                    onClick={handleRequestChanges}
+                    disabled={submittingFeedback || !feedbackText.trim()}
+                    className="mt-2 px-4 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {submittingFeedback ? 'Submitting...' : 'Request Changes'}
+                  </button>
+                </div>
+              )}
+
               {/* Quick Actions */}
               <div className="flex gap-2 pt-4 border-t border-zinc-800">
-                {brief.status === 'evaluating' || (brief.status === 'building' && brief.pipeline_stage && brief.pipeline_stage !== 'build_complete') ? (
+                {brief.status === 'evaluating' || brief.status === 'revising' || (brief.status === 'building' && brief.pipeline_stage && brief.pipeline_stage !== 'build_complete') ? (
                   <div className="flex-1 py-2 text-center text-sm text-amber-400 flex items-center justify-center gap-2">
                     <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    {brief.pipeline_stage === 'gatekeeper' ? 'Evaluating...' :
+                    {brief.status === 'revising' ? 'Revising based on feedback...' :
+                     brief.pipeline_stage === 'gatekeeper' ? 'Evaluating...' :
                      brief.pipeline_stage === 'deliberating' ? 'Deliberating...' :
                      brief.pipeline_stage === 'voting' ? 'Voting...' :
                      brief.pipeline_stage === 'planning' ? 'Architect planning...' :

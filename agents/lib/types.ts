@@ -67,5 +67,6 @@ export type BriefWithProject = {
     name: string
     repo_url: string | null
     default_branch: string
+    deployment_notes: string | null
   } | null
 }

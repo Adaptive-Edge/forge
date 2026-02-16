@@ -18,15 +18,32 @@ const OUTCOME_TYPES: Record<number, string[]> = {
   4: ['Brand Awareness', 'Customer Attraction'],
 }
 
-export function NewBriefModal({ onClose }: { onClose: () => void }) {
+export type BriefDefaultValues = {
+  title?: string
+  brief?: string
+  outcome_tier?: number
+  outcome_type?: string
+  impact_score?: number
+  acceptance_criteria?: string[]
+}
+
+export function NewBriefModal({
+  onClose,
+  defaultValues,
+}: {
+  onClose: () => void
+  defaultValues?: BriefDefaultValues
+}) {
   const [projects, setProjects] = useState<Project[]>([])
-  const [title, setTitle] = useState('')
-  const [brief, setBrief] = useState('')
+  const [title, setTitle] = useState(defaultValues?.title || '')
+  const [brief, setBrief] = useState(defaultValues?.brief || '')
   const [projectId, setProjectId] = useState('')
-  const [outcomeTier, setOutcomeTier] = useState(2)
-  const [outcomeType, setOutcomeType] = useState('Productivity & Time')
-  const [impactScore, setImpactScore] = useState(5)
-  const [criteria, setCriteria] = useState<string[]>([''])
+  const [outcomeTier, setOutcomeTier] = useState(defaultValues?.outcome_tier || 2)
+  const [outcomeType, setOutcomeType] = useState(defaultValues?.outcome_type || 'Productivity & Time')
+  const [impactScore, setImpactScore] = useState(defaultValues?.impact_score || 5)
+  const [criteria, setCriteria] = useState<string[]>(
+    defaultValues?.acceptance_criteria?.length ? defaultValues.acceptance_criteria : ['']
+  )
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
