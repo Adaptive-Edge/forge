@@ -26,10 +26,12 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
       {(brief.status === 'evaluating' || (brief.status === 'building' && brief.pipeline_stage)) && (
         <div className="flex items-center gap-1.5 mb-2 text-xs text-amber-400">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-          {brief.pipeline_stage === 'gatekeeper' ? 'Gatekeeper...' :
+          {brief.pipeline_stage === 'gatekeeper' ? 'Evaluating...' :
            brief.pipeline_stage === 'skeptic' ? 'Skeptic...' :
+           brief.pipeline_stage === 'deliberating' ? 'Deliberating...' :
            brief.pipeline_stage === 'voting' ? 'Voting...' :
            brief.pipeline_stage === 'planning' ? 'Planning...' :
+           brief.pipeline_stage === 'critic_review' ? 'Critic reviewing...' :
            brief.pipeline_stage === 'building' ? 'Building...' :
            brief.pipeline_stage === 'build_complete' ? 'Build complete' :
            brief.status === 'evaluating' ? 'Evaluating...' :

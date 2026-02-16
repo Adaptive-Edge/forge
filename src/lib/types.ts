@@ -66,3 +66,25 @@ export type AcceptanceCriterion = {
   completed: boolean
   sort_order: number | null
 }
+
+export type DeliberationRound = {
+  id: string
+  brief_id: string
+  agent_slug: string
+  round: number
+  verdict: string
+  reasoning: string
+  confidence: number
+  revised_from: string | null
+  created_at: string
+}
+
+export type DecisionReport = {
+  id: string
+  brief_id: string
+  decision: 'approved' | 'rejected'
+  summary: string
+  weighted_score: number
+  dissenting_views: string | null
+  created_at: string
+}

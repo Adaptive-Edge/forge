@@ -23,8 +23,8 @@ async function processBrief(briefId: string, title: string) {
 }
 
 async function main() {
-  console.log('\n\uD83D\uDD25 Forge Orchestrator')
-  console.log('  Autonomous pipeline: Evaluate \u2192 Plan \u2192 Build')
+  console.log('\n\uD83D\uDD25 Forge Orchestrator (Phase 3)')
+  console.log('  Pipeline: Evaluate (4 agents) \u2192 Deliberate \u2192 Vote \u2192 Plan \u2192 Critic \u2192 Build')
   console.log('  Watching for briefs...\n')
 
   // Catch up: process any briefs already in evaluating state

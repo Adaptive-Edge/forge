@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import type { Brief, AgentEvaluation, BuildLog, AcceptanceCriterion } from '@/lib/types'
+import type { Brief, AgentEvaluation, BuildLog, AcceptanceCriterion, DeliberationRound, DecisionReport } from '@/lib/types'
 
 const TIER_COLORS: Record<number, string> = {
   1: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
@@ -16,6 +16,22 @@ const TIER_NAMES: Record<number, string> = {
   2: 'Leverage',
   3: 'Growth',
   4: 'Reach',
+}
+
+const VERDICT_EMOJI: Record<string, string> = {
+  approve: '\u2705',
+  reject: '\u274C',
+  concern: '\u26A0\uFE0F',
+}
+
+const PIPELINE_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'building']
+const PIPELINE_LABELS: Record<string, string> = {
+  gatekeeper: 'Evaluate',
+  deliberating: 'Deliberate',
+  voting: 'Vote',
+  planning: 'Plan',
+  critic_review: 'Critic',
+  building: 'Build',
 }
 
 export function BriefDetailPanel({
@@ -36,6 +52,8 @@ export function BriefDetailPanel({
   const [evaluations, setEvaluations] = useState<AgentEvaluation[]>([])
   const [buildLogs, setBuildLogs] = useState<BuildLog[]>([])
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>([])
+  const [deliberationRounds, setDeliberationRounds] = useState<DeliberationRound[]>([])
+  const [decisionReport, setDecisionReport] = useState<DecisionReport | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -61,6 +79,22 @@ export function BriefDetailPanel({
       .order('sort_order')
       .then(({ data }) => { if (data) setCriteria(data) })
 
+    supabase
+      .from('deliberation_rounds')
+      .select('*')
+      .eq('brief_id', brief.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => { if (data) setDeliberationRounds(data) })
+
+    supabase
+      .from('decision_reports')
+      .select('*')
+      .eq('brief_id', brief.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+      .then(({ data }) => { if (data) setDecisionReport(data) })
+
     // Realtime subscriptions for live updates
     const channel = supabase
       .channel(`brief-${brief.id}-live`)
@@ -79,6 +113,22 @@ export function BriefDetailPanel({
         filter: `brief_id=eq.${brief.id}`,
       }, (payload) => {
         setBuildLogs(prev => [...prev, payload.new as BuildLog])
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'deliberation_rounds',
+        filter: `brief_id=eq.${brief.id}`,
+      }, (payload) => {
+        setDeliberationRounds(prev => [...prev, payload.new as DeliberationRound])
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'decision_reports',
+        filter: `brief_id=eq.${brief.id}`,
+      }, (payload) => {
+        setDecisionReport(payload.new as DecisionReport)
       })
       .subscribe()
 
@@ -160,6 +210,13 @@ export function BriefDetailPanel({
     return `${Math.floor(seconds / 86400)}d ago`
   }
 
+  // Group deliberation rounds by round number
+  const round1 = deliberationRounds.filter(r => r.round === 1)
+  const round2 = deliberationRounds.filter(r => r.round === 2)
+
+  // Separate evaluations: intake evaluators vs critic
+  const criticEvaluations = evaluations.filter(e => e.agent_slug === 'critic')
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -193,27 +250,26 @@ export function BriefDetailPanel({
               </div>
             </div>
             <button onClick={onClose} className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white">
-              ✕
+              &#x2715;
             </button>
           </div>
 
           {/* Pipeline progress */}
           {brief.pipeline_stage && (brief.status === 'evaluating' || brief.status === 'building') && (
             <div className="flex items-center gap-2 mt-3 text-xs">
-              {['gatekeeper', 'voting', 'planning', 'building'].map((stage, i) => {
-                const stages = ['gatekeeper', 'voting', 'planning', 'building']
-                const currentIdx = stages.indexOf(brief.pipeline_stage || '')
+              {PIPELINE_STAGES.map((stage, i) => {
+                const currentIdx = PIPELINE_STAGES.indexOf(brief.pipeline_stage || '')
                 const isActive = stage === brief.pipeline_stage
                 const isDone = i < currentIdx
                 return (
                   <div key={stage} className="flex items-center gap-2">
                     {i > 0 && <span className={`w-4 h-px ${isDone ? 'bg-orange-500' : 'bg-zinc-700'}`} />}
-                    <span className={`capitalize ${
+                    <span className={`${
                       isActive ? 'text-orange-400 font-medium' :
                       isDone ? 'text-zinc-400' : 'text-zinc-600'
                     }`}>
                       {isActive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse mr-1 align-middle" />}
-                      {stage === 'gatekeeper' ? 'Evaluate' : stage}
+                      {PIPELINE_LABELS[stage] || stage}
                     </span>
                   </div>
                 )
@@ -346,8 +402,10 @@ export function BriefDetailPanel({
                   <div className="flex-1 py-2 text-center text-sm text-amber-400 flex items-center justify-center gap-2">
                     <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                     {brief.pipeline_stage === 'gatekeeper' ? 'Evaluating...' :
+                     brief.pipeline_stage === 'deliberating' ? 'Deliberating...' :
                      brief.pipeline_stage === 'voting' ? 'Voting...' :
                      brief.pipeline_stage === 'planning' ? 'Architect planning...' :
+                     brief.pipeline_stage === 'critic_review' ? 'Critic reviewing...' :
                      brief.pipeline_stage === 'building' ? 'Builder working...' :
                      'Processing...'}
                   </div>
@@ -377,29 +435,105 @@ export function BriefDetailPanel({
           )}
 
           {activeTab === 'agents' && (
-            <div className="space-y-4">
-              <p className="text-xs text-zinc-500 mb-4">
-                Agent evaluations and decisions for this brief
-              </p>
-              {evaluations.map((evaluation) => (
-                <div key={evaluation.id} className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
+            <div className="space-y-6">
+              {/* Decision Report */}
+              {decisionReport && (
+                <div className={`rounded-lg p-4 border ${
+                  decisionReport.decision === 'approved'
+                    ? 'bg-emerald-900/20 border-emerald-700/50'
+                    : 'bg-red-900/20 border-red-700/50'
+                }`}>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">
-                        {evaluation.verdict === 'approve' ? '\u2705' : evaluation.verdict === 'reject' ? '\u274C' : '\u26A0\uFE0F'}
-                      </span>
-                      <span className="font-medium capitalize">{evaluation.agent_slug}</span>
-                    </div>
-                    <span className="text-xs text-zinc-500">{formatRelative(evaluation.created_at)}</span>
+                    <h3 className="text-sm font-medium">
+                      {decisionReport.decision === 'approved' ? '\u2705 Team Decision: Approved' : '\u274C Team Decision: Rejected'}
+                    </h3>
+                    <span className="text-xs text-zinc-500">
+                      Score: {decisionReport.weighted_score.toFixed(1)}
+                    </span>
                   </div>
-                  <p className="text-sm text-zinc-400">{evaluation.reasoning}</p>
-                  {evaluation.confidence && (
-                    <p className="text-xs text-zinc-500 mt-2">Confidence: {evaluation.confidence}/10</p>
+                  <p className="text-sm text-zinc-300">{decisionReport.summary}</p>
+                  {decisionReport.dissenting_views && (
+                    <div className="mt-3 pt-3 border-t border-zinc-700/50">
+                      <p className="text-xs text-zinc-500 mb-1">Dissenting views:</p>
+                      <p className="text-xs text-zinc-400 italic">{decisionReport.dissenting_views}</p>
+                    </div>
                   )}
                 </div>
-              ))}
+              )}
 
-              {evaluations.length === 0 && (
+              {/* Deliberation Rounds */}
+              {round1.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-400 mb-3">Round 1 — Independent Evaluation</h3>
+                  <div className="space-y-3">
+                    {round1.map((dr) => (
+                      <div key={dr.id} className="bg-zinc-800 rounded-lg p-3 border border-zinc-700">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">{VERDICT_EMOJI[dr.verdict] || ''}</span>
+                            <span className="text-sm font-medium capitalize">{dr.agent_slug}</span>
+                          </div>
+                          <span className="text-xs text-zinc-500">conf {dr.confidence}/10</span>
+                        </div>
+                        <p className="text-xs text-zinc-400">{dr.reasoning}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {round2.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-400 mb-3">Round 2 — Deliberation</h3>
+                  <div className="space-y-3">
+                    {round2.map((dr) => (
+                      <div key={dr.id} className={`bg-zinc-800 rounded-lg p-3 border ${
+                        dr.revised_from ? 'border-amber-600/50' : 'border-zinc-700'
+                      }`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">{VERDICT_EMOJI[dr.verdict] || ''}</span>
+                            <span className="text-sm font-medium capitalize">{dr.agent_slug}</span>
+                            {dr.revised_from && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400 border border-amber-700/50">
+                                Changed from {dr.revised_from}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-zinc-500">conf {dr.confidence}/10</span>
+                        </div>
+                        <p className="text-xs text-zinc-400">{dr.reasoning}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Legacy evaluations (for briefs evaluated before Phase 3) */}
+              {deliberationRounds.length === 0 && evaluations.filter(e => e.agent_slug !== 'critic').length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-400 mb-3">Agent Evaluations</h3>
+                  <div className="space-y-3">
+                    {evaluations.filter(e => e.agent_slug !== 'critic').map((evaluation) => (
+                      <div key={evaluation.id} className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{VERDICT_EMOJI[evaluation.verdict || ''] || ''}</span>
+                            <span className="font-medium capitalize">{evaluation.agent_slug}</span>
+                          </div>
+                          <span className="text-xs text-zinc-500">{formatRelative(evaluation.created_at)}</span>
+                        </div>
+                        <p className="text-sm text-zinc-400">{evaluation.reasoning}</p>
+                        {evaluation.confidence && (
+                          <p className="text-xs text-zinc-500 mt-2">Confidence: {evaluation.confidence}/10</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {deliberationRounds.length === 0 && evaluations.length === 0 && (
                 <div className="text-center text-zinc-500 py-8">
                   No agent evaluations yet. Start the build to trigger agent analysis.
                 </div>
@@ -412,6 +546,32 @@ export function BriefDetailPanel({
               <p className="text-xs text-zinc-500 mb-4">
                 Implementation plan from the Architect agent
               </p>
+
+              {/* Critic feedback */}
+              {criticEvaluations.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  <h3 className="text-sm font-medium text-zinc-400">Critic Review</h3>
+                  {criticEvaluations.map((ce) => (
+                    <div key={ce.id} className={`rounded-lg p-3 border ${
+                      ce.verdict === 'approve'
+                        ? 'bg-emerald-900/20 border-emerald-700/50'
+                        : 'bg-amber-900/20 border-amber-700/50'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">{VERDICT_EMOJI[ce.verdict || ''] || ''}</span>
+                        <span className="text-sm font-medium">
+                          {ce.verdict === 'approve' ? 'Plan approved by Critic' : 'Critic raised concerns'}
+                        </span>
+                        {ce.confidence && (
+                          <span className="text-xs text-zinc-500 ml-auto">conf {ce.confidence}/10</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-400">{ce.reasoning}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {brief.architect_plan ? (
                 <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
                   <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-sans leading-relaxed">
@@ -422,6 +582,11 @@ export function BriefDetailPanel({
                 <div className="text-center text-amber-400 py-8 flex items-center justify-center gap-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                   Architect is designing the plan...
+                </div>
+              ) : brief.pipeline_stage === 'critic_review' ? (
+                <div className="text-center text-amber-400 py-8 flex items-center justify-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  Critic is reviewing the plan...
                 </div>
               ) : (
                 <div className="text-center text-zinc-500 py-8">

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import type { Verdict } from './types'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://supabase.adaptiveedge.uk'
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzM1Njg5NjAwLCJleHAiOjE4OTM0NTYwMDB9.oMbaS3CnjWNmpHUfucybDwfEcWIDRl4BTeHBj_urRmg'
@@ -75,4 +76,53 @@ export async function fetchBriefWithProject(briefId: string) {
   }
 
   return { ...brief, project }
+}
+
+export async function writeDeliberationRound(
+  briefId: string,
+  agentSlug: string,
+  round: number,
+  result: { verdict: Verdict; reasoning: string; confidence: number },
+  revisedFrom?: Verdict
+) {
+  await supabase.from('deliberation_rounds').insert({
+    brief_id: briefId,
+    agent_slug: agentSlug,
+    round,
+    verdict: result.verdict,
+    reasoning: result.reasoning,
+    confidence: Math.min(10, Math.max(1, result.confidence)),
+    revised_from: revisedFrom || null,
+  })
+}
+
+export async function fetchDeliberationRounds(briefId: string, round?: number) {
+  let query = supabase
+    .from('deliberation_rounds')
+    .select('*')
+    .eq('brief_id', briefId)
+    .order('created_at', { ascending: true })
+
+  if (round !== undefined) {
+    query = query.eq('round', round)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(`Failed to fetch deliberation rounds: ${error.message}`)
+  return data || []
+}
+
+export async function writeDecisionReport(
+  briefId: string,
+  report: {
+    decision: 'approved' | 'rejected'
+    summary: string
+    weighted_score: number
+    dissenting_views: string | null
+  }
+) {
+  await supabase.from('decision_reports').insert({
+    brief_id: briefId,
+    ...report,
+  })
 }

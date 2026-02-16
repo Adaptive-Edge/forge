@@ -1,6 +1,6 @@
 import { callClaude } from './claude'
 import { logBuild, writeEvaluation } from './supabase'
-import { gatekeeperPrompt, skepticPrompt } from './prompts'
+import { gatekeeperPrompt, skepticPrompt, cynicPrompt, accountantPrompt } from './prompts'
 import type { BriefWithProject, EvaluationResult } from './types'
 
 function parseEvaluation(output: string): EvaluationResult {
@@ -76,3 +76,57 @@ export async function runSkeptic(brief: BriefWithProject): Promise<EvaluationRes
   console.log(`  [Skeptic] ${result.verdict}: ${result.reasoning}`)
   return result
 }
+
+export async function runCynic(brief: BriefWithProject): Promise<EvaluationResult> {
+  await logBuild(brief.id, 'Cynic', 'Checking for patterns and displacement activity...')
+  console.log('  [Cynic] Evaluating...')
+
+  const output = await callClaude(cynicPrompt(brief))
+  const result = parseEvaluation(output)
+
+  await writeEvaluation(brief.id, 'cynic', 'behavioural_check', {
+    verdict: result.verdict,
+    reasoning: result.reasoning,
+    confidence: result.confidence,
+  })
+
+  const emoji = result.verdict === 'approve' ? '\u2713' : result.verdict === 'reject' ? '\u2717' : '\u26A0'
+  await logBuild(
+    brief.id,
+    'Cynic',
+    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
+    result.verdict === 'reject' ? 'warn' : 'info',
+    result as unknown as Record<string, unknown>
+  )
+
+  console.log(`  [Cynic] ${result.verdict}: ${result.reasoning}`)
+  return result
+}
+
+export async function runAccountant(brief: BriefWithProject): Promise<EvaluationResult> {
+  await logBuild(brief.id, 'Accountant', 'Calculating cost vs return...')
+  console.log('  [Accountant] Evaluating...')
+
+  const output = await callClaude(accountantPrompt(brief))
+  const result = parseEvaluation(output)
+
+  await writeEvaluation(brief.id, 'accountant', 'cost_analysis', {
+    verdict: result.verdict,
+    reasoning: result.reasoning,
+    confidence: result.confidence,
+  })
+
+  const emoji = result.verdict === 'approve' ? '\u2713' : result.verdict === 'reject' ? '\u2717' : '\u26A0'
+  await logBuild(
+    brief.id,
+    'Accountant',
+    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
+    result.verdict === 'reject' ? 'warn' : 'info',
+    result as unknown as Record<string, unknown>
+  )
+
+  console.log(`  [Accountant] ${result.verdict}: ${result.reasoning}`)
+  return result
+}
+
+export { parseEvaluation }

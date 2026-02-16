@@ -1,8 +1,10 @@
 export type PipelineStage =
   | 'gatekeeper'
   | 'skeptic'
+  | 'deliberating'
   | 'voting'
   | 'planning'
+  | 'critic_review'
   | 'building'
   | 'build_complete'
 
@@ -14,6 +16,28 @@ export type EvaluationResult = {
   suggested_tier?: number
   suggested_impact?: number
   confidence: number
+}
+
+export type DeliberationRound = {
+  id: string
+  brief_id: string
+  agent_slug: string
+  round: number
+  verdict: Verdict
+  reasoning: string
+  confidence: number
+  revised_from: Verdict | null
+  created_at: string
+}
+
+export type DecisionReport = {
+  id: string
+  brief_id: string
+  decision: 'approved' | 'rejected'
+  summary: string
+  weighted_score: number
+  dissenting_views: string | null
+  created_at: string
 }
 
 export type AgentConfig = {
