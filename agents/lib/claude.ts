@@ -1,6 +1,23 @@
 import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 
+// Mac → server path mappings for when orchestrator runs on server
+const PATH_MAPPINGS: [string, string][] = [
+  ['/Users/nathan/forge', '/var/www/forge'],
+  ['/Users/nathan/adaptive-edge-apps', '/var/www/adaptive-edge-apps'],
+  ['/Users/nathan/agents/', '/home/nathan/agents/'],
+]
+
+function resolveServerPath(macPath: string): string | null {
+  for (const [macPrefix, serverPrefix] of PATH_MAPPINGS) {
+    if (macPath.startsWith(macPrefix)) {
+      const resolved = macPath.replace(macPrefix, serverPrefix)
+      if (existsSync(resolved)) return resolved
+    }
+  }
+  return null
+}
+
 export function callClaude(
   prompt: string,
   options: {
@@ -11,11 +28,18 @@ export function callClaude(
 ): Promise<string> {
   let { model = 'haiku', cwd = '/tmp', allowedTools } = options
 
-  // Validate cwd exists — local_path may be a Mac path when running on server
+  // Resolve cwd — local_path may be a Mac path when running on server
   if (cwd && !existsSync(cwd)) {
-    console.log(`  [callClaude] cwd "${cwd}" not found, falling back to /tmp (no file tools)`)
-    cwd = '/tmp'
-    allowedTools = undefined
+    // Try known Mac → server path mappings
+    const serverPath = resolveServerPath(cwd)
+    if (serverPath) {
+      console.log(`  [callClaude] Resolved "${cwd}" → "${serverPath}"`)
+      cwd = serverPath
+    } else {
+      console.log(`  [callClaude] cwd "${cwd}" not found, falling back to /tmp (no file tools)`)
+      cwd = '/tmp'
+      allowedTools = undefined
+    }
   }
 
   return new Promise((resolve, reject) => {
