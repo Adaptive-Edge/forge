@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 
 export function callClaude(
   prompt: string,
@@ -8,7 +9,14 @@ export function callClaude(
     allowedTools?: string[]
   } = {}
 ): Promise<string> {
-  const { model = 'haiku', cwd = '/tmp', allowedTools } = options
+  let { model = 'haiku', cwd = '/tmp', allowedTools } = options
+
+  // Validate cwd exists — local_path may be a Mac path when running on server
+  if (cwd && !existsSync(cwd)) {
+    console.log(`  [callClaude] cwd "${cwd}" not found, falling back to /tmp (no file tools)`)
+    cwd = '/tmp'
+    allowedTools = undefined
+  }
 
   return new Promise((resolve, reject) => {
     const env = { ...process.env }
