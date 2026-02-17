@@ -34,6 +34,9 @@ export type Project = {
   repo_url: string | null
   default_branch: string
   extra_agents: string[] | null
+  deployment_notes: string | null
+  local_path: string | null
+  context_notes: string | null
   created_at: string
 }
 

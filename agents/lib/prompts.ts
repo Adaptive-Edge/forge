@@ -282,22 +282,31 @@ export function architectFeedbackPrompt(
   feedback: string,
   revisionNumber: number
 ): string {
+  const contextNotes = brief.project?.context_notes
+  const hasLocalPath = !!brief.project?.local_path
+
   return `You are the Architect agent for The Forge. Nathan has reviewed the build output and requested changes. Revise the plan to address his feedback.
 
 ## Brief:
 - Title: ${brief.title}
 - Description: ${brief.brief}
+${contextNotes ? `- Project Notes: ${contextNotes}` : ''}
 
 ## Current Plan (v${revisionNumber}):
 ${currentPlan}
 
 ## Nathan's Feedback:
 ${feedback}
+${hasLocalPath ? `
+## Codebase Access:
+You have access to the project's files. If Nathan's feedback requires understanding existing code:
+1. Use Glob/Read to check the relevant files before revising the plan.
+2. Reference actual file paths and existing patterns in your revised plan.` : ''}
 
 ## Your Task:
 Revise the plan to address Nathan's feedback. He's reviewed the actual build output (PR, code), so his feedback is based on real results, not hypotheticals. Take his requests literally — he knows what he wants.
 
-IMPORTANT: Start your response IMMEDIATELY with "## Files" — no preamble. Jump straight into the revised plan.
+IMPORTANT: Start your response IMMEDIATELY with ${hasLocalPath ? 'your exploration or ' : ''}"## Files" — no preamble. Jump straight into the revised plan.
 
 ## Required format:
 
@@ -324,6 +333,8 @@ export function architectPrompt(brief: BriefWithProject): string {
   const repoUrl = brief.project?.repo_url || brief.repo_url || 'Not specified'
   const branch = brief.project?.default_branch || 'main'
   const deploymentNotes = brief.project?.deployment_notes
+  const contextNotes = brief.project?.context_notes
+  const hasLocalPath = !!brief.project?.local_path
 
   return `You are the Architect agent for The Forge, Nathan's personal build system. Your job is to design a clear, actionable implementation plan for a brief that has been approved by evaluators.
 
@@ -332,17 +343,27 @@ export function architectPrompt(brief: BriefWithProject): string {
 - Repository: ${repoUrl}
 - Default Branch: ${branch}
 ${deploymentNotes ? `- Deployment Notes: ${deploymentNotes}` : ''}
+${contextNotes ? `- Project Notes: ${contextNotes}` : ''}
 
 ## Brief:
 - Title: ${brief.title}
 - Description: ${brief.brief}
 - Outcome Tier: ${brief.outcome_tier || '?'}
 - Impact Score: ${brief.impact_score || '?'}/10
+${hasLocalPath ? `
+## IMPORTANT — Explore the codebase first:
+You have access to the project's files. Before writing your plan:
+1. Look for a CLAUDE.md file in the project root — it contains conventions, architecture, and key config.
+2. Use Glob to understand the project structure (e.g. \`**/*.ts\`, \`src/**/*\`).
+3. Read key files relevant to the brief to understand existing patterns.
+4. Only THEN write your plan, referencing actual file paths and existing code.
+
+Do NOT plan blind — explore first, plan second.` : ''}
 
 ## Your Task:
 Create a structured implementation plan. Be specific about:
-1. **Files to create or modify** — exact paths where possible
-2. **Approach** — how to implement this, key patterns to follow
+1. **Files to create or modify** — exact paths you found in the codebase
+2. **Approach** — how to implement this, following the project's existing patterns
 3. **Key decisions** — any architectural choices and why
 4. **Risks** — what could go wrong, edge cases to handle
 5. **Testing** — how to verify the implementation works
@@ -358,9 +379,9 @@ The Builder agent can only create code and pull requests. It CANNOT deploy. Your
 - Consider the project's existing patterns and conventions.
 - The final deliverable is always a PR, never a deployment.
 
-IMPORTANT: Start your response IMMEDIATELY with "## Files" — no preamble, no "Let me think about this", no introduction. Jump straight into the plan.
+IMPORTANT: Start your response IMMEDIATELY with your exploration (if you have file access) or "## Files" (if not). No preamble.
 
-## Required format:
+## Required format (after exploration):
 
 ## Files
 - \`path/to/file.ts\` — what to do to this file

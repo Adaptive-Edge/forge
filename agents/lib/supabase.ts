@@ -69,7 +69,7 @@ export async function fetchBriefWithProject(briefId: string) {
   if (brief.project_id) {
     const { data } = await supabase
       .from('projects')
-      .select('name, repo_url, default_branch, deployment_notes')
+      .select('name, repo_url, default_branch, deployment_notes, local_path, context_notes')
       .eq('id', brief.project_id)
       .single()
     project = data

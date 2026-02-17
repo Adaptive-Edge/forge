@@ -205,8 +205,16 @@ export async function runPlanning(briefId: string): Promise<boolean> {
   await logBuild(briefId, 'Architect', 'Designing implementation plan...')
   console.log('  [Architect] Planning...')
 
+  const localPath = brief.project?.local_path
+
   try {
-    const plan = await callClaude(architectPrompt(brief), { model: 'sonnet' })
+    const plan = await callClaude(architectPrompt(brief), {
+      model: 'sonnet',
+      ...(localPath && {
+        cwd: localPath,
+        allowedTools: ['Read', 'Glob', 'Grep'],
+      }),
+    })
 
     await updateBrief(briefId, { architect_plan: plan })
 
@@ -268,9 +276,16 @@ export async function runCriticReview(briefId: string): Promise<boolean> {
         await logBuild(briefId, 'Pipeline', `Critic raised concerns (round ${revision + 1}). Architect revising plan...`)
         console.log(`  [Pipeline] Architect revising plan (round ${revision + 2})...`)
 
+        const localPath = brief.project?.local_path
         const revisedPlan = await callClaude(
           architectRevisionPrompt(brief, currentPlan, result.reasoning),
-          { model: 'sonnet' }
+          {
+            model: 'sonnet',
+            ...(localPath && {
+              cwd: localPath,
+              allowedTools: ['Read', 'Glob', 'Grep'],
+            }),
+          }
         )
 
         currentPlan = revisedPlan
@@ -302,17 +317,19 @@ export async function runBuilding(briefId: string): Promise<boolean> {
     return false
   }
 
-  const repoUrl = brief.project?.repo_url || brief.repo_url
-  if (!repoUrl) {
-    await logBuild(briefId, 'Builder', 'No repository URL \u2014 cannot build', 'error')
-    await updateBrief(briefId, { status: 'review', pipeline_stage: null })
-    return false
+  // Prefer project local_path, fall back to deriving from repo_url
+  let cwd = brief.project?.local_path
+  if (!cwd) {
+    const repoUrl = brief.project?.repo_url || brief.repo_url
+    if (!repoUrl) {
+      await logBuild(briefId, 'Builder', 'No repository URL or local path \u2014 cannot build', 'error')
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      return false
+    }
+    const repoName = repoUrl.split('/').pop()?.replace('.git', '') || ''
+    const basePath = process.env.REPO_BASE_PATH || '/var/www'
+    cwd = `${basePath}/${repoName}`
   }
-
-  // Map GitHub URL to repo path on this machine
-  const repoName = repoUrl.split('/').pop()?.replace('.git', '') || ''
-  const basePath = process.env.REPO_BASE_PATH || '/var/www'
-  const cwd = `${basePath}/${repoName}`
 
   await logBuild(briefId, 'Builder', `Starting build in ${cwd}...`)
   console.log(`  [Builder] Building in ${cwd}...`)
@@ -360,13 +377,20 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
     await runPlanning(briefId)
   } else {
     // Architect revises plan based on Nathan's feedback
+    const localPath = brief.project?.local_path
     await logBuild(briefId, 'Architect', `Revising plan based on feedback (revision ${revisionNumber})...`)
     console.log(`  [Architect] Revising plan (v${revisionNumber + 1})...`)
 
     try {
       const revisedPlan = await callClaude(
         architectFeedbackPrompt(brief, brief.architect_plan, feedback, revisionNumber),
-        { model: 'sonnet' }
+        {
+          model: 'sonnet',
+          ...(localPath && {
+            cwd: localPath,
+            allowedTools: ['Read', 'Glob', 'Grep'],
+          }),
+        }
       )
 
       await updateBrief(briefId, { architect_plan: revisedPlan })
