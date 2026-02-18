@@ -42,7 +42,7 @@ async function processRevision(briefId: string, title: string, feedback: string,
 
 async function main() {
   console.log('\n\uD83D\uDD25 Forge Orchestrator (Phase 4)')
-  console.log('  Pipeline: Evaluate (4 agents) \u2192 Deliberate \u2192 Vote \u2192 Plan \u2192 Critic \u2192 Build')
+  console.log('  Pipeline: Evaluate (4 agents) \u2192 Deliberate \u2192 Vote \u2192 Plan \u2192 Critic \u2192 Build \u2192 Brand')
   console.log('  + Revision loop: Feedback \u2192 Revise Plan \u2192 Re-build')
   console.log('  Watching for briefs...\n')
 

@@ -6,6 +6,7 @@ export type PipelineStage =
   | 'planning'
   | 'critic_review'
   | 'building'
+  | 'brand_review'
   | 'build_complete'
 
 export type Verdict = 'approve' | 'reject' | 'concern'

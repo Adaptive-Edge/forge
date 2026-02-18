@@ -24,7 +24,7 @@ const VERDICT_EMOJI: Record<string, string> = {
   concern: '\u26A0\uFE0F',
 }
 
-const PIPELINE_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'building']
+const PIPELINE_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'building', 'brand_review']
 const PIPELINE_LABELS: Record<string, string> = {
   gatekeeper: 'Evaluate',
   deliberating: 'Deliberate',
@@ -32,6 +32,7 @@ const PIPELINE_LABELS: Record<string, string> = {
   planning: 'Plan',
   critic_review: 'Critic',
   building: 'Build',
+  brand_review: 'Brand',
 }
 
 export function BriefDetailPanel({
@@ -248,8 +249,9 @@ export function BriefDetailPanel({
   const round1 = deliberationRounds.filter(r => r.round === 1)
   const round2 = deliberationRounds.filter(r => r.round === 2)
 
-  // Separate evaluations: intake evaluators vs critic
+  // Separate evaluations: intake evaluators vs critic vs brand guardian
   const criticEvaluations = evaluations.filter(e => e.agent_slug === 'critic')
+  const brandEvaluations = evaluations.filter(e => e.agent_slug === 'brand-guardian')
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -463,6 +465,7 @@ export function BriefDetailPanel({
                      brief.pipeline_stage === 'planning' ? 'Architect planning...' :
                      brief.pipeline_stage === 'critic_review' ? 'Critic reviewing...' :
                      brief.pipeline_stage === 'building' ? 'Builder working...' :
+                     brief.pipeline_stage === 'brand_review' ? 'Brand reviewing...' :
                      'Processing...'}
                   </div>
                 ) : evaluations.length > 0 ? (
@@ -623,6 +626,36 @@ export function BriefDetailPanel({
                         )}
                       </div>
                       <p className="text-xs text-zinc-400">{ce.reasoning}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Brand Guardian feedback */}
+              {brandEvaluations.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  <h3 className="text-sm font-medium text-zinc-400">Brand Guardian Review</h3>
+                  {brandEvaluations.map((be) => (
+                    <div key={be.id} className={`rounded-lg p-3 border ${
+                      be.verdict === 'approve'
+                        ? 'bg-emerald-900/20 border-emerald-700/50'
+                        : 'bg-amber-900/20 border-amber-700/50'
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm">{VERDICT_EMOJI[be.verdict || ''] || ''}</span>
+                        <span className="text-sm font-medium">
+                          {be.verdict === 'approve' ? 'Design system compliant' : 'Design system violations found'}
+                        </span>
+                        {be.confidence && (
+                          <span className="text-xs text-zinc-500 ml-auto">conf {be.confidence}/10</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-400">{be.reasoning}</p>
+                      {be.suggestions && (be.suggestions as { concerns?: { file: string; rule: string; description: string }[] }).concerns?.map((c, i) => (
+                        <div key={i} className="mt-2 pl-3 border-l border-amber-700/50 text-xs text-zinc-400">
+                          <span className="text-amber-400">{c.file}</span> — <span className="text-zinc-500">{c.rule}:</span> {c.description}
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>

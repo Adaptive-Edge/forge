@@ -34,6 +34,7 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
            brief.pipeline_stage === 'planning' ? 'Planning...' :
            brief.pipeline_stage === 'critic_review' ? 'Critic reviewing...' :
            brief.pipeline_stage === 'building' ? 'Building...' :
+           brief.pipeline_stage === 'brand_review' ? 'Brand review...' :
            brief.pipeline_stage === 'build_complete' ? 'Build complete' :
            brief.status === 'evaluating' ? 'Evaluating...' :
            'Processing...'}

@@ -5,7 +5,7 @@ import {
   writeEvaluation, fetchBriefHistory,
 } from './supabase'
 import { architectPrompt, architectRevisionPrompt, architectFeedbackPrompt, builderPrompt, criticPrompt, deliberationPrompt } from './prompts'
-import { runGatekeeper, runSkeptic, runCynic, runAccountant, parseEvaluation } from './evaluators'
+import { runGatekeeper, runSkeptic, runCynic, runAccountant, runBrandGuardian, parseEvaluation } from './evaluators'
 import type { EvaluationResult, Verdict } from './types'
 
 const EVALUATOR_AGENTS = [
@@ -351,11 +351,6 @@ export async function runBuilding(briefId: string): Promise<boolean> {
     }
 
     await logBuild(briefId, 'Builder', 'Build complete')
-    await updateBrief(briefId, {
-      status: 'review',
-      pipeline_stage: 'build_complete',
-    })
-
     console.log('  [Builder] Build complete')
     return true
   } catch (err) {
@@ -364,6 +359,46 @@ export async function runBuilding(briefId: string): Promise<boolean> {
     await updateBrief(briefId, { status: 'review', pipeline_stage: null })
     return false
   }
+}
+
+export async function runBrandReview(briefId: string): Promise<void> {
+  const brief = await fetchBriefWithProject(briefId)
+
+  // Skip if no PR URL
+  if (!brief.pr_url) {
+    console.log('  [Brand Guardian] No PR URL — skipping brand review')
+    await logBuild(briefId, 'Brand Guardian', 'Skipped — no PR URL', 'info')
+    await updateBrief(briefId, { status: 'review', pipeline_stage: 'build_complete' })
+    return
+  }
+
+  // Skip if project isn't in the monorepo (no design system to check against)
+  const localPath = brief.project?.local_path || ''
+  const isMonorepoApp = localPath.includes('adaptive-edge-apps')
+  if (!isMonorepoApp) {
+    console.log('  [Brand Guardian] Not a monorepo project — skipping brand review')
+    await logBuild(briefId, 'Brand Guardian', 'Skipped — project not in monorepo (no design system)', 'info')
+    await updateBrief(briefId, { status: 'review', pipeline_stage: 'build_complete' })
+    return
+  }
+
+  await updateBrief(briefId, { pipeline_stage: 'brand_review' })
+
+  try {
+    const result = await runBrandGuardian(brief)
+
+    // Advisory only — always proceed to review regardless of verdict
+    if (result.verdict !== 'approve') {
+      console.log(`  [Brand Guardian] ${result.concerns.length} concern(s) logged — proceeding anyway (advisory)`)
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    await logBuild(briefId, 'Brand Guardian', `Brand review failed: ${msg}`, 'error')
+    console.log(`  [Brand Guardian] Failed: ${msg} — proceeding anyway`)
+  }
+
+  // Always mark complete — brand review is non-blocking
+  await updateBrief(briefId, { status: 'review', pipeline_stage: 'build_complete' })
 }
 
 export async function runRevision(briefId: string, feedback: string, revisionNumber: number): Promise<void> {
@@ -405,7 +440,14 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
   }
 
   // Skip to build (no evaluation or critic review for revisions)
-  await runBuilding(briefId)
+  const built = await runBuilding(briefId)
+  if (!built) {
+    await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+    console.log('  [Pipeline] Revision build failed')
+    return
+  }
+
+  await runBrandReview(briefId)
   console.log('  [Pipeline] Revision complete')
 }
 
@@ -430,6 +472,13 @@ export async function advancePipeline(briefId: string): Promise<void> {
     return
   }
 
-  await runBuilding(briefId)
+  const built = await runBuilding(briefId)
+  if (!built) {
+    console.log('  [Pipeline] Build failed, moving to review')
+    await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+    return
+  }
+
+  await runBrandReview(briefId)
   console.log('  [Pipeline] Pipeline complete')
 }
