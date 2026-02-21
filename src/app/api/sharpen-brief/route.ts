@@ -1,15 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { spawn } from 'child_process'
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+function callClaude(prompt: string, model = 'haiku'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env }
+    delete env.CLAUDECODE
+
+    const proc = spawn('claude', ['-p', '--model', model], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env,
+      cwd: '/tmp',
+    })
+
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (data: Buffer) => { stdout += data.toString() })
+    proc.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
+
+    proc.on('close', (code) => {
+      if (code !== 0) reject(new Error(`Claude exited with code ${code}: ${stderr}`))
+      else resolve(stdout.trim())
+    })
+
+    proc.on('error', (err) => reject(new Error(`Failed to spawn claude: ${err.message}`)))
+
+    proc.stdin.write(prompt)
+    proc.stdin.end()
+  })
+}
 
 export async function POST(request: NextRequest) {
-  if (!ANTHROPIC_API_KEY) {
-    return NextResponse.json(
-      { error: 'ANTHROPIC_API_KEY not configured' },
-      { status: 500 }
-    )
-  }
-
   const { transcript } = await request.json()
 
   if (!transcript || typeof transcript !== 'string') {
@@ -20,17 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: `You extract structured briefs from voice transcripts for a software build queue called The Forge.
+    const prompt = `You extract structured briefs from voice transcripts for a software build queue called The Forge.
 
 Given a raw transcript, extract:
 - title: Short, clear title (under 60 chars)
@@ -40,27 +50,13 @@ Given a raw transcript, extract:
 - impact_score: 1-10 integer
 - acceptance_criteria: Array of 2-4 specific "done when" statements
 
-Respond with ONLY valid JSON, no markdown fences.`,
-        messages: [
-          {
-            role: 'user',
-            content: `Extract a structured brief from this voice transcript:\n\n"${transcript}"`,
-          },
-        ],
-      }),
-    })
+Respond with ONLY valid JSON, no markdown fences.
 
-    if (!response.ok) {
-      const error = await response.text()
-      console.error('Anthropic API error:', error)
-      return NextResponse.json(
-        { error: 'Failed to process transcript' },
-        { status: 502 }
-      )
-    }
+Extract a structured brief from this voice transcript:
 
-    const data = await response.json()
-    const text = data.content[0]?.text || ''
+"${transcript}"`
+
+    const text = await callClaude(prompt)
 
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
