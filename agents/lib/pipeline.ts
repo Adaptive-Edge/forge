@@ -209,7 +209,7 @@ export async function runPlanning(briefId: string): Promise<boolean> {
 
   try {
     const plan = await callClaude(architectPrompt(brief), {
-      model: 'sonnet',
+      model: 'opus',
       ...(localPath && {
         cwd: localPath,
         allowedTools: ['Read', 'Glob', 'Grep'],
@@ -280,7 +280,7 @@ export async function runCriticReview(briefId: string): Promise<boolean> {
         const revisedPlan = await callClaude(
           architectRevisionPrompt(brief, currentPlan, result.reasoning),
           {
-            model: 'sonnet',
+            model: 'opus',
             ...(localPath && {
               cwd: localPath,
               allowedTools: ['Read', 'Glob', 'Grep'],
@@ -338,7 +338,7 @@ export async function runBuilding(briefId: string): Promise<boolean> {
     const prompt = builderPrompt(brief, brief.architect_plan)
 
     const output = await callClaude(prompt, {
-      model: 'sonnet',
+      model: 'opus',
       cwd,
       allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
     })
@@ -420,7 +420,7 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
       const revisedPlan = await callClaude(
         architectFeedbackPrompt(brief, brief.architect_plan, feedback, revisionNumber),
         {
-          model: 'sonnet',
+          model: 'opus',
           ...(localPath && {
             cwd: localPath,
             allowedTools: ['Read', 'Glob', 'Grep'],
