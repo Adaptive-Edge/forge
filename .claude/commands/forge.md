@@ -46,7 +46,7 @@ curl -s -X POST "https://supabase.adaptiveedge.uk/rest/v1/briefs" \
   }'
 ```
 
-Replace `ANON_KEY` with: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzM1Njg5NjAwLCJleHAiOjE4OTM0NTYwMDB9.oMbaS3CnjWNmpHUfucybDwfEcWIDRl4BTeHBj_urRmg`
+Replace `ANON_KEY` with the value of `NEXT_PUBLIC_SUPABASE_ANON_KEY` from your `.env.local` file.
 
 To find the project UUID, first query projects:
 ```bash
