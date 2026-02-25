@@ -22,7 +22,21 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
           </span>
         )}
       </div>
-      <p className="text-xs text-zinc-400 line-clamp-2 mb-3">{brief.brief}</p>
+      <p className="text-xs text-zinc-400 line-clamp-2 mb-2">{brief.brief}</p>
+      {(brief.fast_track || brief.auto_deploy) && (
+        <div className="flex gap-1.5 mb-2">
+          {brief.fast_track && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
+              Fast-track
+            </span>
+          )}
+          {brief.auto_deploy && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
+              Auto-deploy
+            </span>
+          )}
+        </div>
+      )}
       {(brief.status === 'evaluating' || brief.status === 'revising' || (brief.status === 'building' && brief.pipeline_stage)) && (
         <div className="flex items-center gap-1.5 mb-2 text-xs text-amber-400">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -36,6 +50,8 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
            brief.pipeline_stage === 'building' ? 'Building...' :
            brief.pipeline_stage === 'brand_review' ? 'Brand review...' :
            brief.pipeline_stage === 'build_complete' ? 'Build complete' :
+           brief.pipeline_stage === 'deploying' ? 'Deploying...' :
+           brief.pipeline_stage === 'deploy_complete' ? 'Deployed' :
            brief.status === 'evaluating' ? 'Evaluating...' :
            'Processing...'}
         </div>

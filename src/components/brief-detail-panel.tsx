@@ -24,7 +24,10 @@ const VERDICT_EMOJI: Record<string, string> = {
   concern: '\u26A0\uFE0F',
 }
 
-const PIPELINE_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'building', 'brand_review']
+const FULL_PIPELINE_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'building', 'brand_review']
+const FAST_PIPELINE_STAGES = ['planning', 'building', 'brand_review']
+const DEPLOY_SUFFIX = ['deploying']
+
 const PIPELINE_LABELS: Record<string, string> = {
   gatekeeper: 'Evaluate',
   deliberating: 'Deliberate',
@@ -33,6 +36,12 @@ const PIPELINE_LABELS: Record<string, string> = {
   critic_review: 'Critic',
   building: 'Build',
   brand_review: 'Brand',
+  deploying: 'Deploy',
+}
+
+function getPipelineStages(brief: Brief): string[] {
+  const base = brief.fast_track ? FAST_PIPELINE_STAGES : FULL_PIPELINE_STAGES
+  return brief.auto_deploy ? [...base, ...DEPLOY_SUFFIX] : base
 }
 
 export function BriefDetailPanel({
@@ -272,10 +281,20 @@ export function BriefDetailPanel({
               ) : (
                 <h2 className="text-xl font-semibold">{brief.title}</h2>
               )}
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
                 {brief.outcome_tier && (
                   <span className={`text-xs px-2 py-0.5 rounded border ${TIER_COLORS[brief.outcome_tier]}`}>
                     {TIER_NAMES[brief.outcome_tier]}
+                  </span>
+                )}
+                {brief.fast_track && (
+                  <span className="text-xs px-2 py-0.5 rounded border bg-orange-500/20 text-orange-400 border-orange-500/30">
+                    Fast-track
+                  </span>
+                )}
+                {brief.auto_deploy && (
+                  <span className="text-xs px-2 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30">
+                    Auto-deploy
                   </span>
                 )}
                 {brief.outcome_type && (
@@ -293,8 +312,9 @@ export function BriefDetailPanel({
           {/* Pipeline progress */}
           {brief.pipeline_stage && (brief.status === 'evaluating' || brief.status === 'building' || brief.status === 'revising') && (
             <div className="flex items-center gap-2 mt-3 text-xs">
-              {PIPELINE_STAGES.map((stage, i) => {
-                const currentIdx = PIPELINE_STAGES.indexOf(brief.pipeline_stage || '')
+              {getPipelineStages(brief).map((stage, i) => {
+                const stages = getPipelineStages(brief)
+                const currentIdx = stages.indexOf(brief.pipeline_stage || '')
                 const isActive = stage === brief.pipeline_stage
                 const isDone = i < currentIdx
                 return (
@@ -455,7 +475,7 @@ export function BriefDetailPanel({
 
               {/* Quick Actions */}
               <div className="flex gap-2 pt-4 border-t border-zinc-800">
-                {brief.status === 'evaluating' || brief.status === 'revising' || (brief.status === 'building' && brief.pipeline_stage && brief.pipeline_stage !== 'build_complete') ? (
+                {brief.status === 'evaluating' || brief.status === 'revising' || (brief.status === 'building' && brief.pipeline_stage && brief.pipeline_stage !== 'build_complete' && brief.pipeline_stage !== 'deploy_complete') ? (
                   <div className="flex-1 py-2 text-center text-sm text-amber-400 flex items-center justify-center gap-2">
                     <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                     {brief.status === 'revising' ? 'Revising based on feedback...' :
@@ -466,6 +486,7 @@ export function BriefDetailPanel({
                      brief.pipeline_stage === 'critic_review' ? 'Critic reviewing...' :
                      brief.pipeline_stage === 'building' ? 'Builder working...' :
                      brief.pipeline_stage === 'brand_review' ? 'Brand reviewing...' :
+                     brief.pipeline_stage === 'deploying' ? 'Deploying to production...' :
                      'Processing...'}
                   </div>
                 ) : evaluations.length > 0 ? (

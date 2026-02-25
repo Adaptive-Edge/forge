@@ -25,6 +25,8 @@ Take Nathan's idea (provided as `$ARGUMENTS`) and refine it into a structured br
    - **Outcome Tier**: 1 (Foundation: Health/Family), 2 (Leverage: Productivity), 3 (Growth: Revenue/Client Value), 4 (Reach: Brand/Awareness)
    - **Outcome Type**: One of the sub-types for the tier
    - **Impact Score**: 1-10
+   - **Pipeline mode**: Ask "Full pipeline or fast-track?" — fast-track skips evaluation and critic, goes straight to plan → build. Default: full pipeline.
+   - **Deploy mode**: Ask "PR only or auto-deploy?" — auto-deploy merges the PR and deploys to production automatically. Default: PR only.
    - Show the summary and ask: "Does this look right? Any changes before I submit?"
 
 4. **On confirmation**, insert the brief into Supabase using curl:
@@ -42,7 +44,9 @@ curl -s -X POST "https://supabase.adaptiveedge.uk/rest/v1/briefs" \
     "outcome_type": "THE TYPE",
     "impact_score": SCORE,
     "project_id": "PROJECT_UUID_OR_NULL",
-    "status": "intake"
+    "status": "intake",
+    "fast_track": false,
+    "auto_deploy": false
   }'
 ```
 

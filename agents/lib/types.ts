@@ -8,6 +8,8 @@ export type PipelineStage =
   | 'building'
   | 'brand_review'
   | 'build_complete'
+  | 'deploying'
+  | 'deploy_complete'
 
 export type Verdict = 'approve' | 'reject' | 'concern'
 
@@ -64,6 +66,8 @@ export type BriefWithProject = {
   pr_url: string | null
   pipeline_stage: string | null
   architect_plan: string | null
+  fast_track: boolean
+  auto_deploy: boolean
   project?: {
     name: string
     repo_url: string | null

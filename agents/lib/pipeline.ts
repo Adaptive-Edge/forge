@@ -4,8 +4,9 @@ import {
   writeDeliberationRound, fetchDeliberationRounds, writeDecisionReport,
   writeEvaluation, fetchBriefHistory,
 } from './supabase'
-import { architectPrompt, architectRevisionPrompt, architectFeedbackPrompt, builderPrompt, criticPrompt, deliberationPrompt } from './prompts'
+import { architectPrompt, architectRevisionPrompt, architectFeedbackPrompt, builderPrompt, criticPrompt, deliberationPrompt, deployerPrompt } from './prompts'
 import { runGatekeeper, runSkeptic, runCynic, runAccountant, runBrandGuardian, parseEvaluation } from './evaluators'
+import { loadAgentContext } from './context'
 import type { EvaluationResult, Verdict } from './types'
 
 const EVALUATOR_AGENTS = [
@@ -206,9 +207,10 @@ export async function runPlanning(briefId: string): Promise<boolean> {
   console.log('  [Architect] Planning...')
 
   const localPath = brief.project?.local_path
+  const context = loadAgentContext(localPath)
 
   try {
-    const plan = await callClaude(architectPrompt(brief), {
+    const plan = await callClaude(context + architectPrompt(brief), {
       model: 'opus',
       ...(localPath && {
         cwd: localPath,
@@ -277,8 +279,9 @@ export async function runCriticReview(briefId: string): Promise<boolean> {
         console.log(`  [Pipeline] Architect revising plan (round ${revision + 2})...`)
 
         const localPath = brief.project?.local_path
+        const context = loadAgentContext(localPath)
         const revisedPlan = await callClaude(
-          architectRevisionPrompt(brief, currentPlan, result.reasoning),
+          context + architectRevisionPrompt(brief, currentPlan, result.reasoning),
           {
             model: 'opus',
             ...(localPath && {
@@ -334,10 +337,12 @@ export async function runBuilding(briefId: string): Promise<boolean> {
   await logBuild(briefId, 'Builder', `Starting build in ${cwd}...`)
   console.log(`  [Builder] Building in ${cwd}...`)
 
+  const context = loadAgentContext(cwd)
+
   try {
     const prompt = builderPrompt(brief, brief.architect_plan)
 
-    const output = await callClaude(prompt, {
+    const output = await callClaude(context + prompt, {
       model: 'opus',
       cwd,
       allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
@@ -401,6 +406,51 @@ export async function runBrandReview(briefId: string): Promise<void> {
   await updateBrief(briefId, { status: 'review', pipeline_stage: 'build_complete' })
 }
 
+export async function runDeployment(briefId: string): Promise<boolean> {
+  const brief = await fetchBriefWithProject(briefId)
+
+  if (!brief.pr_url) {
+    await logBuild(briefId, 'Deployer', 'No PR URL — cannot deploy', 'error')
+    return false
+  }
+
+  await updateBrief(briefId, { pipeline_stage: 'deploying' })
+  await logBuild(briefId, 'Deployer', `Auto-deploying: merging PR and deploying to production...`)
+  console.log('  [Deployer] Auto-deploying...')
+
+  const localPath = brief.project?.local_path
+  const context = loadAgentContext(localPath)
+
+  try {
+    const output = await callClaude(context + deployerPrompt(brief), {
+      model: 'opus',
+      cwd: localPath || '/tmp',
+      allowedTools: ['Read', 'Bash', 'Glob', 'Grep'],
+    })
+
+    // Check for deployment success/failure indicators
+    const failed = output.toLowerCase().includes('deployment failed') ||
+                   output.toLowerCase().includes('rollback') ||
+                   output.toLowerCase().includes('stop-work')
+
+    if (failed) {
+      await logBuild(briefId, 'Deployer', `Deployment had issues — check logs`, 'warn')
+      console.log('  [Deployer] Deployment had issues')
+    } else {
+      await logBuild(briefId, 'Deployer', 'Deployment complete and verified')
+      console.log('  [Deployer] Deployment complete')
+    }
+
+    await updateBrief(briefId, { pipeline_stage: 'deploy_complete' })
+    return !failed
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    await logBuild(briefId, 'Deployer', `Deployment failed: ${msg}`, 'error')
+    console.log(`  [Deployer] Failed: ${msg}`)
+    return false
+  }
+}
+
 export async function runRevision(briefId: string, feedback: string, revisionNumber: number): Promise<void> {
   console.log(`\n--- Pipeline: revision ${revisionNumber} for brief ${briefId} ---`)
 
@@ -413,12 +463,13 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
   } else {
     // Architect revises plan based on Nathan's feedback
     const localPath = brief.project?.local_path
+    const context = loadAgentContext(localPath)
     await logBuild(briefId, 'Architect', `Revising plan based on feedback (revision ${revisionNumber})...`)
     console.log(`  [Architect] Revising plan (v${revisionNumber + 1})...`)
 
     try {
       const revisedPlan = await callClaude(
-        architectFeedbackPrompt(brief, brief.architect_plan, feedback, revisionNumber),
+        context + architectFeedbackPrompt(brief, brief.architect_plan, feedback, revisionNumber),
         {
           model: 'opus',
           ...(localPath && {
@@ -448,30 +499,69 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
   }
 
   await runBrandReview(briefId)
-  console.log('  [Pipeline] Revision complete')
+
+  // Auto-deploy if enabled
+  if (brief.auto_deploy) {
+    const deployed = await runDeployment(briefId)
+    if (!deployed) {
+      await logBuild(briefId, 'Pipeline', 'Auto-deploy failed after revision — moved to review', 'warn')
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      console.log('  [Pipeline] Revision auto-deploy failed')
+      return
+    }
+    await updateBrief(briefId, { status: 'done', pipeline_stage: 'deploy_complete' })
+    await logBuild(briefId, 'Pipeline', 'Revision complete — built and deployed')
+    console.log('  [Pipeline] Revision complete (built + deployed)')
+  } else {
+    console.log('  [Pipeline] Revision complete')
+  }
 }
 
 export async function advancePipeline(briefId: string): Promise<void> {
-  console.log(`\n--- Pipeline: advancing brief ${briefId} ---`)
+  const brief = await fetchBriefWithProject(briefId)
+  const isFastTrack = brief.fast_track
+  const isAutoDeploy = brief.auto_deploy
 
-  const approved = await runEvaluation(briefId)
-  if (!approved) {
-    console.log('  [Pipeline] Brief rejected, returning to intake')
-    return
+  const mode = isFastTrack && isAutoDeploy ? 'fast-track + auto-deploy' :
+               isFastTrack ? 'fast-track' :
+               isAutoDeploy ? 'full + auto-deploy' : 'full'
+  console.log(`\n--- Pipeline: advancing brief ${briefId} (${mode}) ---`)
+  await logBuild(briefId, 'Pipeline', `Pipeline started in ${mode} mode`)
+
+  // Step 1: Evaluation (skip if fast-track)
+  if (!isFastTrack) {
+    const approved = await runEvaluation(briefId)
+    if (!approved) {
+      console.log('  [Pipeline] Brief rejected, returning to intake')
+      return
+    }
+  } else {
+    await logBuild(briefId, 'Pipeline', 'Fast-track: skipping evaluation panel')
+    console.log('  [Pipeline] Fast-track: skipping evaluation')
+    // Move status to building since we skip evaluation
+    await updateBrief(briefId, { status: 'building' })
   }
 
+  // Step 2: Planning (always runs)
   const planned = await runPlanning(briefId)
   if (!planned) {
     console.log('  [Pipeline] Planning failed, moving to review')
     return
   }
 
-  const criticOk = await runCriticReview(briefId)
-  if (!criticOk) {
-    console.log('  [Pipeline] Critic review failed, moving to review')
-    return
+  // Step 3: Critic review (skip if fast-track)
+  if (!isFastTrack) {
+    const criticOk = await runCriticReview(briefId)
+    if (!criticOk) {
+      console.log('  [Pipeline] Critic review failed, moving to review')
+      return
+    }
+  } else {
+    await logBuild(briefId, 'Pipeline', 'Fast-track: skipping critic review')
+    console.log('  [Pipeline] Fast-track: skipping critic')
   }
 
+  // Step 4: Build (always runs)
   const built = await runBuilding(briefId)
   if (!built) {
     console.log('  [Pipeline] Build failed, moving to review')
@@ -479,6 +569,22 @@ export async function advancePipeline(briefId: string): Promise<void> {
     return
   }
 
+  // Step 5: Brand review (always runs — it's advisory)
   await runBrandReview(briefId)
-  console.log('  [Pipeline] Pipeline complete')
+
+  // Step 6: Auto-deploy (only if enabled)
+  if (isAutoDeploy) {
+    const deployed = await runDeployment(briefId)
+    if (!deployed) {
+      await logBuild(briefId, 'Pipeline', 'Auto-deploy failed — brief moved to review for manual intervention', 'warn')
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      console.log('  [Pipeline] Auto-deploy failed, needs manual intervention')
+      return
+    }
+    await updateBrief(briefId, { status: 'done', pipeline_stage: 'deploy_complete' })
+    await logBuild(briefId, 'Pipeline', 'Pipeline complete — built and deployed')
+    console.log('  [Pipeline] Pipeline complete (built + deployed)')
+  } else {
+    console.log('  [Pipeline] Pipeline complete (PR created, awaiting review)')
+  }
 }

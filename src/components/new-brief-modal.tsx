@@ -25,6 +25,8 @@ export type BriefDefaultValues = {
   outcome_type?: string
   impact_score?: number
   acceptance_criteria?: string[]
+  fast_track?: boolean
+  auto_deploy?: boolean
 }
 
 export function NewBriefModal({
@@ -44,6 +46,8 @@ export function NewBriefModal({
   const [criteria, setCriteria] = useState<string[]>(
     defaultValues?.acceptance_criteria?.length ? defaultValues.acceptance_criteria : ['']
   )
+  const [fastTrack, setFastTrack] = useState(defaultValues?.fast_track || false)
+  const [autoDeploy, setAutoDeploy] = useState(defaultValues?.auto_deploy || false)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -70,6 +74,8 @@ export function NewBriefModal({
         outcome_tier: outcomeTier,
         outcome_type: outcomeType,
         impact_score: impactScore,
+        fast_track: fastTrack,
+        auto_deploy: autoDeploy,
       })
       .select()
       .single()
@@ -231,6 +237,43 @@ export function NewBriefModal({
             >
               + Add criterion
             </button>
+          </div>
+
+          {/* Pipeline Mode */}
+          <div className="space-y-3 pt-2">
+            <label className="block text-sm font-medium text-zinc-400">Pipeline Mode</label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={fastTrack}
+                  onChange={e => setFastTrack(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-zinc-700 rounded-full peer-checked:bg-orange-600 transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
+              </div>
+              <div>
+                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">Fast-track</span>
+                <p className="text-xs text-zinc-500">Skip evaluation panel and critic — straight to plan and build</p>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={autoDeploy}
+                  onChange={e => setAutoDeploy(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-zinc-700 rounded-full peer-checked:bg-red-600 transition-colors" />
+                <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
+              </div>
+              <div>
+                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">Auto-deploy</span>
+                <p className="text-xs text-zinc-500">Merge PR and deploy to production automatically after build</p>
+              </div>
+            </label>
           </div>
 
           {/* Submit */}

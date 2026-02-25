@@ -449,6 +449,53 @@ If you find violations, include them in concerns:
 {"verdict":"concern","reasoning":"Found 3 design system violations.","confidence":7,"concerns":[{"file":"src/App.tsx","line":42,"rule":"Colours","description":"Hardcoded hex #f16c5f should use bg-ae-orange"}]}`
 }
 
+export function deployerPrompt(brief: BriefWithProject): string {
+  const prUrl = brief.pr_url || ''
+  const deploymentNotes = brief.project?.deployment_notes || ''
+  const projectName = brief.project?.name || 'Unknown'
+
+  return `You are the Deployer agent for The Forge, Nathan's personal build system. A build has been completed and a PR created. Your job is to merge the PR and deploy to production following Nathan's exact deployment protocol.
+
+## Brief:
+- Title: ${brief.title}
+- Project: ${projectName}
+- PR: ${prUrl}
+${deploymentNotes ? `- Deployment Notes: ${deploymentNotes}` : ''}
+
+## Your Task (follow this EXACTLY):
+
+### Step 1: Merge the PR
+\`\`\`bash
+gh pr merge ${prUrl} --merge
+\`\`\`
+
+### Step 2: Deploy to server
+Follow the deployment protocol from the Global Instructions above. The standard sequence is:
+1. Save rollback point: \`ssh root@adaptiveedge.uk -i ~/.ssh/nathan_droplet_key "cd /var/www/<app> && git rev-parse HEAD > /tmp/<app>-last-good-commit.txt"\`
+2. Pull and build: \`ssh root@adaptiveedge.uk -i ~/.ssh/nathan_droplet_key "cd /var/www/<app> && git pull origin main && npm run build"\`
+3. Restart PM2: \`ssh root@adaptiveedge.uk -i ~/.ssh/nathan_droplet_key "pm2 restart <app-name>"\`
+
+Use the deployment notes and project context to determine the correct paths, PM2 process names, and ports.
+
+### Step 3: Verify deployment
+1. Check PM2 restarted (uptime should be seconds): \`ssh root@adaptiveedge.uk -i ~/.ssh/nathan_droplet_key "pm2 list | grep <app-name>"\`
+2. Check API responds: \`ssh root@adaptiveedge.uk -i ~/.ssh/nathan_droplet_key "curl -s http://localhost:<port>/api/health"\`
+3. Check frontend loads: \`curl -s https://adaptiveedge.uk/<app>/ | head -20\`
+
+### Step 4: If verification fails — ROLLBACK
+If ANY verification step fails:
+1. Print "DEPLOYMENT FAILED — rolling back"
+2. Run: \`ssh root@adaptiveedge.uk -i ~/.ssh/nathan_droplet_key "cd /var/www/<app> && git reset --hard $(cat /tmp/<app>-last-good-commit.txt) && npm run build && pm2 restart <app-name>"\`
+3. Verify the rollback worked
+
+## CRITICAL RULES:
+- NEVER skip the rollback point (Step 2.1)
+- NEVER skip verification (Step 3)
+- If you can't determine the correct server path, PM2 name, or port from the context — STOP and print "DEPLOYMENT FAILED — insufficient deployment config"
+- If SSH fails, retry once after 10 seconds. If it fails again, print "DEPLOYMENT FAILED — SSH unreachable"
+- Print a clear summary at the end: either "Deployment verified successfully" or "DEPLOYMENT FAILED — <reason>"`
+}
+
 export function builderPrompt(brief: BriefWithProject, plan: string): string {
   const slug = brief.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
   const branch = `forge/${slug}`

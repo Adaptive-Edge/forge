@@ -19,6 +19,8 @@ export type Brief = {
   pr_url: string | null
   pipeline_stage: string | null
   architect_plan: string | null
+  fast_track: boolean
+  auto_deploy: boolean
   estimated_hours: number | null
   actual_hours: number | null
   agent_name: string | null
