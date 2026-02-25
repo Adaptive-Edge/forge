@@ -1,4 +1,5 @@
 import type { BriefWithProject, EvaluationResult } from './types'
+import { discoverSkills, formatSkillManifest, loadCognitiveDesignRules } from './skills'
 
 export type BriefHistoryItem = {
   title: string
@@ -330,11 +331,81 @@ What changed and why (address Nathan's feedback).`
 }
 
 export function architectPrompt(brief: BriefWithProject): string {
+  const isRunBrief = brief.brief_type === 'run'
   const repoUrl = brief.project?.repo_url || brief.repo_url || 'Not specified'
   const branch = brief.project?.default_branch || 'main'
   const deploymentNotes = brief.project?.deployment_notes
   const contextNotes = brief.project?.context_notes
   const hasLocalPath = !!brief.project?.local_path
+
+  // For run briefs, include available skills
+  const skills = isRunBrief ? discoverSkills() : []
+  const skillManifest = isRunBrief ? formatSkillManifest(skills) : ''
+
+  // Load cognitive design rules if this looks like a workshop/facilitation task
+  const briefLower = `${brief.title} ${brief.brief}`.toLowerCase()
+  const isWorkshopRelated = ['workshop', 'facilitat', 'deck', 'participant', 'agenda', 'proposal', 'training', 'session'].some(w => briefLower.includes(w))
+  const cognitiveRules = isRunBrief && isWorkshopRelated ? loadCognitiveDesignRules() : null
+
+  if (isRunBrief) {
+    return `You are the Architect agent for The Forge, Nathan's personal build system. Your job is to design a clear, actionable plan for a task brief. This is a "run" task — it produces deliverables (files, documents, decks, etc.), NOT code changes.
+
+## Context:
+- Project: ${brief.project?.name || 'Unassigned'}
+${contextNotes ? `- Project Notes: ${contextNotes}` : ''}
+
+## Brief:
+- Title: ${brief.title}
+- Description: ${brief.brief}
+- Type: Run (deliverable, not code)
+- Outcome Tier: ${brief.outcome_tier || '?'}
+- Impact Score: ${brief.impact_score || '?'}/10
+
+${skillManifest}
+${cognitiveRules ? `## Cognitive Design Rules (ALWAYS apply to workshop/facilitation tasks):\n\n${cognitiveRules}\n` : ''}
+${hasLocalPath ? `## Codebase/File Access:
+You have access to project files. Explore relevant files before planning — there may be existing templates, backbone decks, or reference materials.` : ''}
+
+## Your Task:
+Create a structured plan. Be specific about:
+1. **Deliverables** — exact files to produce, with output paths
+2. **Approach** — how to create each deliverable, which skills/helpers to use
+3. **Skills to use** — which skill files the executor should Read for reference
+4. **Key decisions** — content choices, format decisions, and why
+5. **Risks** — what could go wrong
+6. **Verification** — how to confirm the deliverables are correct
+
+## Rules:
+- This is NOT a code task. The output is documents, decks, transcripts, or other deliverables.
+- If a skill exists for this type of work (deck-builder, transcribe, playbook), reference it in the plan.
+- For PowerPoint decks: the executor will write and run a python-pptx build script. Plan the slide structure.
+- For proposals/documents: plan the content structure and key messages.
+- Output files should go in the project directory if one is set, otherwise in ~/forge-output/{brief-slug}/.
+- Be specific enough that an AI executor can produce the deliverables without asking questions.
+
+IMPORTANT: Start your response IMMEDIATELY with "## Deliverables" — no preamble.
+
+## Required format:
+
+## Deliverables
+- \`path/to/output.pptx\` — description
+- \`path/to/build_script.py\` — the script that generates the deliverable
+
+## Skills to Load
+- \`/path/to/skill/file.md\` — what the executor needs from this file
+
+## Approach
+Concrete steps.
+
+## Key Decisions
+Choices made and why.
+
+## Risks
+What could go wrong.
+
+## Verification
+How to confirm deliverables are correct.`
+  }
 
   return `You are the Architect agent for The Forge, Nathan's personal build system. Your job is to design a clear, actionable implementation plan for a brief that has been approved by evaluators.
 
@@ -535,4 +606,47 @@ ${plan}
 3. Print the PR URL so it appears in your output.
 
 Do NOT skip the PR creation. Execute the plan now.`
+}
+
+export function taskRunnerPrompt(brief: BriefWithProject, plan: string): string {
+  const skills = discoverSkills()
+  const skillManifest = formatSkillManifest(skills)
+
+  // Detect if this is a workshop/deck task that needs cognitive design rules
+  const briefLower = `${brief.title} ${brief.brief}`.toLowerCase()
+  const isWorkshopRelated = ['workshop', 'facilitat', 'deck', 'participant', 'agenda', 'proposal', 'training', 'session'].some(w => briefLower.includes(w))
+  const cognitiveRules = isWorkshopRelated ? loadCognitiveDesignRules() : null
+
+  return `You are the Task Runner agent for The Forge, Nathan's personal build system. You have a plan for a "run" task — producing deliverables like documents, PowerPoint decks, transcripts, or other files. Your job is to execute the plan.
+
+## Brief:
+- Title: ${brief.title}
+- Description: ${brief.brief}
+
+## Plan:
+${plan}
+
+${skillManifest}
+${cognitiveRules ? `## Cognitive Design Rules (MUST apply to workshop/facilitation work):\n\n${cognitiveRules}\n` : ''}
+
+## How to Use Skills:
+- The plan references skill files. Use the Read tool to load them BEFORE starting work.
+- For **PowerPoint decks**: Read the deck-builder SKILL.md and helpers.md, then write and run a python-pptx build script.
+- For **proposals/documents**: Read the adaptive-edge-playbook context files for methodology, voice, and templates.
+- For **transcriptions**: Read the transcribe skill and run the transcribe.py script.
+
+## Rules:
+- Follow the plan closely. If you need to deviate, explain why.
+- Use Read to load skill files referenced in the plan BEFORE writing code or content.
+- For Python scripts: write the script, then run it with \`python3\`.
+- For documents: write them directly using the Write tool.
+- Verify your output exists and is correct before finishing.
+- Print the output file path(s) clearly so they appear in your output, like: OUTPUT: /path/to/file.pptx
+
+## MANDATORY Final Step:
+Print all output file paths, each on its own line prefixed with "OUTPUT: ", like:
+OUTPUT: /path/to/deliverable.pptx
+OUTPUT: /path/to/build_script.py
+
+Execute the plan now.`
 }

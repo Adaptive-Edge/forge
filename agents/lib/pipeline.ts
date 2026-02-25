@@ -4,7 +4,7 @@ import {
   writeDeliberationRound, fetchDeliberationRounds, writeDecisionReport,
   writeEvaluation, fetchBriefHistory,
 } from './supabase'
-import { architectPrompt, architectRevisionPrompt, architectFeedbackPrompt, builderPrompt, criticPrompt, deliberationPrompt, deployerPrompt } from './prompts'
+import { architectPrompt, architectRevisionPrompt, architectFeedbackPrompt, builderPrompt, taskRunnerPrompt, criticPrompt, deliberationPrompt, deployerPrompt } from './prompts'
 import { runGatekeeper, runSkeptic, runCynic, runAccountant, runBrandGuardian, parseEvaluation } from './evaluators'
 import { loadAgentContext } from './context'
 import type { EvaluationResult, Verdict } from './types'
@@ -406,6 +406,62 @@ export async function runBrandReview(briefId: string): Promise<void> {
   await updateBrief(briefId, { status: 'review', pipeline_stage: 'build_complete' })
 }
 
+export async function runTask(briefId: string): Promise<boolean> {
+  await updateBrief(briefId, { pipeline_stage: 'running' })
+  const brief = await fetchBriefWithProject(briefId)
+
+  if (!brief.architect_plan) {
+    await logBuild(briefId, 'Task Runner', 'No plan found — cannot execute', 'error')
+    await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+    return false
+  }
+
+  // Use project local_path, HOME, or /tmp as working directory
+  const HOME = process.env.HOME || '/Users/nathan'
+  const slug = brief.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+  const defaultOutputDir = `${HOME}/forge-output/${slug}`
+  const cwd = brief.project?.local_path || defaultOutputDir
+
+  await logBuild(briefId, 'Task Runner', `Executing task in ${cwd}...`)
+  console.log(`  [Task Runner] Running in ${cwd}...`)
+
+  const context = loadAgentContext(brief.project?.local_path)
+
+  try {
+    const prompt = taskRunnerPrompt(brief, brief.architect_plan)
+
+    const output = await callClaude(context + prompt, {
+      model: 'opus',
+      cwd,
+      allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+    })
+
+    // Extract output file paths from agent output
+    const outputPaths = output
+      .split('\n')
+      .filter(line => line.startsWith('OUTPUT: '))
+      .map(line => line.replace('OUTPUT: ', '').trim())
+
+    if (outputPaths.length > 0) {
+      const pathsStr = outputPaths.join('\n')
+      await updateBrief(briefId, { output_path: pathsStr })
+      await logBuild(briefId, 'Task Runner', `Deliverables created:\n${pathsStr}`)
+      console.log(`  [Task Runner] Output: ${pathsStr}`)
+    } else {
+      await logBuild(briefId, 'Task Runner', 'Task complete (no output paths detected)', 'warn')
+    }
+
+    await logBuild(briefId, 'Task Runner', 'Task complete')
+    console.log('  [Task Runner] Complete')
+    return true
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    await logBuild(briefId, 'Task Runner', `Task failed: ${msg}`, 'error')
+    await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+    return false
+  }
+}
+
 export async function runDeployment(briefId: string): Promise<boolean> {
   const brief = await fetchBriefWithProject(briefId)
 
@@ -521,10 +577,13 @@ export async function advancePipeline(briefId: string): Promise<void> {
   const brief = await fetchBriefWithProject(briefId)
   const isFastTrack = brief.fast_track
   const isAutoDeploy = brief.auto_deploy
+  const isRunBrief = brief.brief_type === 'run'
 
-  const mode = isFastTrack && isAutoDeploy ? 'fast-track + auto-deploy' :
-               isFastTrack ? 'fast-track' :
-               isAutoDeploy ? 'full + auto-deploy' : 'full'
+  const mode = [
+    isFastTrack ? 'fast-track' : 'full',
+    isRunBrief ? 'run' : 'build',
+    isAutoDeploy ? '+ auto-deploy' : '',
+  ].filter(Boolean).join(' ')
   console.log(`\n--- Pipeline: advancing brief ${briefId} (${mode}) ---`)
   await logBuild(briefId, 'Pipeline', `Pipeline started in ${mode} mode`)
 
@@ -538,7 +597,6 @@ export async function advancePipeline(briefId: string): Promise<void> {
   } else {
     await logBuild(briefId, 'Pipeline', 'Fast-track: skipping evaluation panel')
     console.log('  [Pipeline] Fast-track: skipping evaluation')
-    // Move status to building since we skip evaluation
     await updateBrief(briefId, { status: 'building' })
   }
 
@@ -561,30 +619,43 @@ export async function advancePipeline(briefId: string): Promise<void> {
     console.log('  [Pipeline] Fast-track: skipping critic')
   }
 
-  // Step 4: Build (always runs)
-  const built = await runBuilding(briefId)
-  if (!built) {
-    console.log('  [Pipeline] Build failed, moving to review')
-    await updateBrief(briefId, { status: 'review', pipeline_stage: null })
-    return
-  }
-
-  // Step 5: Brand review (always runs — it's advisory)
-  await runBrandReview(briefId)
-
-  // Step 6: Auto-deploy (only if enabled)
-  if (isAutoDeploy) {
-    const deployed = await runDeployment(briefId)
-    if (!deployed) {
-      await logBuild(briefId, 'Pipeline', 'Auto-deploy failed — brief moved to review for manual intervention', 'warn')
+  // Step 4: Execute — build (code) or run (task)
+  if (isRunBrief) {
+    const ran = await runTask(briefId)
+    if (!ran) {
+      console.log('  [Pipeline] Task execution failed, moving to review')
       await updateBrief(briefId, { status: 'review', pipeline_stage: null })
-      console.log('  [Pipeline] Auto-deploy failed, needs manual intervention')
       return
     }
-    await updateBrief(briefId, { status: 'done', pipeline_stage: 'deploy_complete' })
-    await logBuild(briefId, 'Pipeline', 'Pipeline complete — built and deployed')
-    console.log('  [Pipeline] Pipeline complete (built + deployed)')
+    // Run briefs skip brand review and deployment — go straight to done/review
+    await updateBrief(briefId, { status: 'review', pipeline_stage: 'task_complete' })
+    await logBuild(briefId, 'Pipeline', 'Pipeline complete — deliverables created')
+    console.log('  [Pipeline] Pipeline complete (run task, deliverables created)')
   } else {
-    console.log('  [Pipeline] Pipeline complete (PR created, awaiting review)')
+    const built = await runBuilding(briefId)
+    if (!built) {
+      console.log('  [Pipeline] Build failed, moving to review')
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      return
+    }
+
+    // Step 5: Brand review (build briefs only — advisory)
+    await runBrandReview(briefId)
+
+    // Step 6: Auto-deploy (only if enabled, build briefs only)
+    if (isAutoDeploy) {
+      const deployed = await runDeployment(briefId)
+      if (!deployed) {
+        await logBuild(briefId, 'Pipeline', 'Auto-deploy failed — brief moved to review for manual intervention', 'warn')
+        await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+        console.log('  [Pipeline] Auto-deploy failed, needs manual intervention')
+        return
+      }
+      await updateBrief(briefId, { status: 'done', pipeline_stage: 'deploy_complete' })
+      await logBuild(briefId, 'Pipeline', 'Pipeline complete — built and deployed')
+      console.log('  [Pipeline] Pipeline complete (built + deployed)')
+    } else {
+      console.log('  [Pipeline] Pipeline complete (PR created, awaiting review)')
+    }
   }
 }

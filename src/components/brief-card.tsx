@@ -23,8 +23,13 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
         )}
       </div>
       <p className="text-xs text-zinc-400 line-clamp-2 mb-2">{brief.brief}</p>
-      {(brief.fast_track || brief.auto_deploy) && (
+      {(brief.brief_type === 'run' || brief.fast_track || brief.auto_deploy) && (
         <div className="flex gap-1.5 mb-2">
+          {brief.brief_type === 'run' && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-400 border border-violet-500/30">
+              Run
+            </span>
+          )}
           {brief.fast_track && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30">
               Fast-track
@@ -50,6 +55,8 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
            brief.pipeline_stage === 'building' ? 'Building...' :
            brief.pipeline_stage === 'brand_review' ? 'Brand review...' :
            brief.pipeline_stage === 'build_complete' ? 'Build complete' :
+           brief.pipeline_stage === 'running' ? 'Running task...' :
+           brief.pipeline_stage === 'task_complete' ? 'Task complete' :
            brief.pipeline_stage === 'deploying' ? 'Deploying...' :
            brief.pipeline_stage === 'deploy_complete' ? 'Deployed' :
            brief.status === 'evaluating' ? 'Evaluating...' :

@@ -24,8 +24,10 @@ const VERDICT_EMOJI: Record<string, string> = {
   concern: '\u26A0\uFE0F',
 }
 
-const FULL_PIPELINE_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'building', 'brand_review']
-const FAST_PIPELINE_STAGES = ['planning', 'building', 'brand_review']
+const FULL_BUILD_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'building', 'brand_review']
+const FAST_BUILD_STAGES = ['planning', 'building', 'brand_review']
+const FULL_RUN_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'running']
+const FAST_RUN_STAGES = ['planning', 'running']
 const DEPLOY_SUFFIX = ['deploying']
 
 const PIPELINE_LABELS: Record<string, string> = {
@@ -35,13 +37,17 @@ const PIPELINE_LABELS: Record<string, string> = {
   planning: 'Plan',
   critic_review: 'Critic',
   building: 'Build',
+  running: 'Run',
   brand_review: 'Brand',
   deploying: 'Deploy',
 }
 
 function getPipelineStages(brief: Brief): string[] {
-  const base = brief.fast_track ? FAST_PIPELINE_STAGES : FULL_PIPELINE_STAGES
-  return brief.auto_deploy ? [...base, ...DEPLOY_SUFFIX] : base
+  const isRun = brief.brief_type === 'run'
+  const base = brief.fast_track
+    ? (isRun ? FAST_RUN_STAGES : FAST_BUILD_STAGES)
+    : (isRun ? FULL_RUN_STAGES : FULL_BUILD_STAGES)
+  return brief.auto_deploy && !isRun ? [...base, ...DEPLOY_SUFFIX] : base
 }
 
 export function BriefDetailPanel({
@@ -431,6 +437,16 @@ export function BriefDetailPanel({
                 </div>
               )}
 
+              {/* Output Path (run briefs) */}
+              {brief.output_path && (
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-400 mb-2">Output</h3>
+                  <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-700 font-mono text-sm text-violet-400 whitespace-pre-wrap">
+                    {brief.output_path}
+                  </div>
+                </div>
+              )}
+
               {/* Status Actions */}
               <div>
                 <h3 className="text-sm font-medium text-zinc-400 mb-2">Move to</h3>
@@ -485,6 +501,7 @@ export function BriefDetailPanel({
                      brief.pipeline_stage === 'planning' ? 'Architect planning...' :
                      brief.pipeline_stage === 'critic_review' ? 'Critic reviewing...' :
                      brief.pipeline_stage === 'building' ? 'Builder working...' :
+                     brief.pipeline_stage === 'running' ? 'Running task...' :
                      brief.pipeline_stage === 'brand_review' ? 'Brand reviewing...' :
                      brief.pipeline_stage === 'deploying' ? 'Deploying to production...' :
                      'Processing...'}

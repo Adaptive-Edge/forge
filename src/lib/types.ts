@@ -21,6 +21,7 @@ export type Brief = {
   architect_plan: string | null
   fast_track: boolean
   auto_deploy: boolean
+  output_path: string | null
   estimated_hours: number | null
   actual_hours: number | null
   agent_name: string | null

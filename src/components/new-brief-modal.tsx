@@ -46,6 +46,7 @@ export function NewBriefModal({
   const [criteria, setCriteria] = useState<string[]>(
     defaultValues?.acceptance_criteria?.length ? defaultValues.acceptance_criteria : ['']
   )
+  const [briefType, setBriefType] = useState<'build' | 'run'>('build')
   const [fastTrack, setFastTrack] = useState(defaultValues?.fast_track || false)
   const [autoDeploy, setAutoDeploy] = useState(defaultValues?.auto_deploy || false)
   const [submitting, setSubmitting] = useState(false)
@@ -70,6 +71,7 @@ export function NewBriefModal({
       .insert({
         title,
         brief,
+        brief_type: briefType,
         project_id: projectId || null,
         outcome_tier: outcomeTier,
         outcome_type: outcomeType,
@@ -157,6 +159,37 @@ export function NewBriefModal({
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
+          </div>
+
+          {/* Brief Type */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Type</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setBriefType('build'); setAutoDeploy(false) }}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                  briefType === 'build'
+                    ? 'bg-blue-600/20 text-blue-400 border-blue-500/50'
+                    : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-600'
+                }`}
+              >
+                Build
+                <span className="block text-xs text-zinc-500 font-normal mt-0.5">Code changes, PR</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setBriefType('run'); setAutoDeploy(false) }}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                  briefType === 'run'
+                    ? 'bg-violet-600/20 text-violet-400 border-violet-500/50'
+                    : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-600'
+                }`}
+              >
+                Run
+                <span className="block text-xs text-zinc-500 font-normal mt-0.5">Decks, docs, tasks</span>
+              </button>
+            </div>
           </div>
 
           {/* Strategic Alignment */}
@@ -258,22 +291,24 @@ export function NewBriefModal({
                 <p className="text-xs text-zinc-500">Skip evaluation panel and critic — straight to plan and build</p>
               </div>
             </label>
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  checked={autoDeploy}
-                  onChange={e => setAutoDeploy(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-zinc-700 rounded-full peer-checked:bg-red-600 transition-colors" />
-                <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
-              </div>
-              <div>
-                <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">Auto-deploy</span>
-                <p className="text-xs text-zinc-500">Merge PR and deploy to production automatically after build</p>
-              </div>
-            </label>
+            {briefType === 'build' && (
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={autoDeploy}
+                    onChange={e => setAutoDeploy(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-zinc-700 rounded-full peer-checked:bg-red-600 transition-colors" />
+                  <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
+                </div>
+                <div>
+                  <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">Auto-deploy</span>
+                  <p className="text-xs text-zinc-500">Merge PR and deploy to production automatically after build</p>
+                </div>
+              </label>
+            )}
           </div>
 
           {/* Submit */}

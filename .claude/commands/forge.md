@@ -16,6 +16,7 @@ Take Nathan's idea (provided as `$ARGUMENTS`) and refine it into a structured br
 1. **Acknowledge the idea**: Repeat back what Nathan described in one sentence to confirm understanding.
 
 2. **Interview** (2-4 quick questions, skip any that are obvious from the input):
+   - "Is this code or a deliverable?" — Code = `build` (creates PR), Deliverable = `run` (creates files: decks, docs, transcripts). Default: `build`.
    - "What problem does this solve?" (if not clear from the description)
    - "Which project is this for?" (Forge, StrategyOS, Arjo, or something new?)
    - "What does done look like?" (acceptance criteria — what specifically should work when this is built?)
@@ -44,6 +45,7 @@ curl -s -X POST "https://supabase.adaptiveedge.uk/rest/v1/briefs" \
     "outcome_type": "THE TYPE",
     "impact_score": SCORE,
     "project_id": "PROJECT_UUID_OR_NULL",
+    "brief_type": "build",
     "status": "intake",
     "fast_track": false,
     "auto_deploy": false

@@ -8,6 +8,8 @@ export type PipelineStage =
   | 'building'
   | 'brand_review'
   | 'build_complete'
+  | 'running'
+  | 'task_complete'
   | 'deploying'
   | 'deploy_complete'
 
@@ -68,6 +70,7 @@ export type BriefWithProject = {
   architect_plan: string | null
   fast_track: boolean
   auto_deploy: boolean
+  output_path: string | null
   project?: {
     name: string
     repo_url: string | null
