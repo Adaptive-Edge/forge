@@ -1,6 +1,7 @@
 import { KanbanBoard } from '@/components/kanban-board'
 import { NewBriefButton } from '@/components/new-brief-button'
 import { SystemStatus } from '@/components/system-status'
+import { HeaderActions } from '@/components/header-actions'
 
 export default function Home() {
   return (
@@ -13,7 +14,10 @@ export default function Home() {
             </div>
             <h1 className="text-xl font-semibold">The Forge</h1>
           </div>
-          <NewBriefButton />
+          <div className="flex items-center gap-3">
+            <HeaderActions />
+            <NewBriefButton />
+          </div>
         </div>
       </header>
       <main className="flex-1 p-6">

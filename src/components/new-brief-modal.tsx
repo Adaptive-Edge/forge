@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import type { Project } from '@/lib/types'
+import type { Project, GitHubRepo } from '@/lib/types'
 
 const OUTCOME_TIERS = [
   { value: 1, name: 'Tier 1: Foundation', description: 'Health, Family' },
@@ -46,6 +46,11 @@ export function NewBriefModal({
   const [criteria, setCriteria] = useState<string[]>(
     defaultValues?.acceptance_criteria?.length ? defaultValues.acceptance_criteria : ['']
   )
+  const [repoUrl, setRepoUrl] = useState('')
+  const [repoQuery, setRepoQuery] = useState('')
+  const [allRepos, setAllRepos] = useState<GitHubRepo[]>([])
+  const [showRepoSuggestions, setShowRepoSuggestions] = useState(false)
+  const repoInputRef = useRef<HTMLInputElement>(null)
   const [briefType, setBriefType] = useState<'build' | 'run'>('build')
   const [fastTrack, setFastTrack] = useState(defaultValues?.fast_track || false)
   const [autoDeploy, setAutoDeploy] = useState(defaultValues?.auto_deploy || false)
@@ -59,6 +64,9 @@ export function NewBriefModal({
         if (data.length > 0) setProjectId(data[0].id)
       }
     })
+    supabase.from('github_repos').select('*').order('pushed_at', { ascending: false }).then(({ data }) => {
+      if (data) setAllRepos(data)
+    })
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,6 +74,9 @@ export function NewBriefModal({
     setSubmitting(true)
 
     const supabase = createClient()
+    const selectedProject = projects.find(p => p.id === projectId)
+    const finalRepoUrl = selectedProject?.repo_url || repoUrl || null
+
     const { data: newBrief, error } = await supabase
       .from('briefs')
       .insert({
@@ -73,6 +84,7 @@ export function NewBriefModal({
         brief,
         brief_type: briefType,
         project_id: projectId || null,
+        repo_url: finalRepoUrl,
         outcome_tier: outcomeTier,
         outcome_type: outcomeType,
         impact_score: impactScore,
@@ -159,6 +171,69 @@ export function NewBriefModal({
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
+          </div>
+
+          {/* Repo URL */}
+          <div className="relative">
+            <label className="block text-sm font-medium text-zinc-400 mb-1">Repository</label>
+            {(() => {
+              const selectedProject = projects.find(p => p.id === projectId)
+              if (selectedProject?.repo_url) {
+                return (
+                  <div className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-400 text-sm">
+                    {selectedProject.repo_url}
+                  </div>
+                )
+              }
+              const filteredRepos = repoQuery
+                ? allRepos.filter(r =>
+                    r.full_name.toLowerCase().includes(repoQuery.toLowerCase()) ||
+                    (r.description && r.description.toLowerCase().includes(repoQuery.toLowerCase()))
+                  )
+                : allRepos.slice(0, 10)
+              return (
+                <>
+                  <input
+                    ref={repoInputRef}
+                    type="text"
+                    value={repoQuery || repoUrl}
+                    onChange={e => {
+                      setRepoQuery(e.target.value)
+                      setRepoUrl(e.target.value)
+                      setShowRepoSuggestions(true)
+                    }}
+                    onFocus={() => setShowRepoSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowRepoSuggestions(false), 200)}
+                    placeholder="Search repos or paste URL..."
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder:text-zinc-500 focus:outline-none focus:border-orange-500 text-sm"
+                  />
+                  {showRepoSuggestions && filteredRepos.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg max-h-48 overflow-y-auto">
+                      {filteredRepos.map(r => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setRepoUrl(r.html_url)
+                            setRepoQuery(r.full_name)
+                            setShowRepoSuggestions(false)
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-zinc-700 text-sm transition-colors"
+                        >
+                          <span className="text-white">{r.full_name}</span>
+                          {r.language && (
+                            <span className="text-zinc-500 ml-2">{r.language}</span>
+                          )}
+                          {r.description && (
+                            <p className="text-xs text-zinc-500 truncate">{r.description}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
 
           {/* Brief Type */}

@@ -94,3 +94,18 @@ export type DecisionReport = {
   dissenting_views: string | null
   created_at: string
 }
+
+export type GitHubRepo = {
+  id: string
+  github_id: number
+  name: string
+  full_name: string
+  html_url: string
+  description: string | null
+  is_private: boolean
+  default_branch: string
+  owner_login: string
+  language: string | null
+  pushed_at: string | null
+  synced_at: string
+}

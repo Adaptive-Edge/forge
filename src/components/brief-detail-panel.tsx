@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import type { Brief, AgentEvaluation, BuildLog, AcceptanceCriterion, DeliberationRound, DecisionReport, Project } from '@/lib/types'
+import type { Brief, AgentEvaluation, BuildLog, AcceptanceCriterion, DeliberationRound, DecisionReport, Project, GitHubRepo } from '@/lib/types'
 
 const OUTCOME_TIERS = [
   { value: 1, name: 'Tier 1: Foundation', description: 'Health, Family' },
@@ -86,6 +86,11 @@ export function BriefDetailPanel({
   const [editedAutoDeploy, setEditedAutoDeploy] = useState(brief.auto_deploy || false)
   const [editedBriefType, setEditedBriefType] = useState<'build' | 'run'>((brief.brief_type as 'build' | 'run') || 'build')
   const [editedProjectId, setEditedProjectId] = useState(brief.project_id || '')
+  const [editedRepoUrl, setEditedRepoUrl] = useState(brief.repo_url || '')
+  const [repoQuery, setRepoQuery] = useState('')
+  const [showRepoSuggestions, setShowRepoSuggestions] = useState(false)
+  const [allRepos, setAllRepos] = useState<GitHubRepo[]>([])
+  const repoInputRef = useRef<HTMLInputElement>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [evaluations, setEvaluations] = useState<AgentEvaluation[]>([])
   const [buildLogs, setBuildLogs] = useState<BuildLog[]>([])
@@ -99,6 +104,9 @@ export function BriefDetailPanel({
     const supabase = createClient()
     supabase.from('projects').select('*').order('name').then(({ data }) => {
       if (data) setProjects(data)
+    })
+    supabase.from('github_repos').select('*').order('pushed_at', { ascending: false }).then(({ data }) => {
+      if (data) setAllRepos(data)
     })
   }, [])
 
@@ -192,11 +200,16 @@ export function BriefDetailPanel({
     setEditedAutoDeploy(brief.auto_deploy || false)
     setEditedBriefType((brief.brief_type as 'build' | 'run') || 'build')
     setEditedProjectId(brief.project_id || '')
+    setEditedRepoUrl(brief.repo_url || '')
+    setRepoQuery('')
     setIsEditing(false)
-  }, [brief.id, brief.brief, brief.title, brief.outcome_tier, brief.outcome_type, brief.impact_score, brief.fast_track, brief.auto_deploy, brief.brief_type, brief.project_id])
+  }, [brief.id, brief.brief, brief.title, brief.outcome_tier, brief.outcome_type, brief.impact_score, brief.fast_track, brief.auto_deploy, brief.brief_type, brief.project_id, brief.repo_url])
 
   const handleSave = async () => {
     const supabase = createClient()
+    const selectedProject = projects.find(p => p.id === editedProjectId)
+    const finalRepoUrl = selectedProject?.repo_url || editedRepoUrl || null
+
     const { error } = await supabase
       .from('briefs')
       .update({
@@ -204,6 +217,7 @@ export function BriefDetailPanel({
         brief: editedBrief,
         brief_type: editedBriefType,
         project_id: editedProjectId || null,
+        repo_url: finalRepoUrl,
         outcome_tier: editedOutcomeTier,
         outcome_type: editedOutcomeType,
         impact_score: editedImpactScore,
@@ -475,6 +489,69 @@ export function BriefDetailPanel({
                     </select>
                   </div>
 
+                  {/* Repo URL */}
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-zinc-400 mb-1">Repository</label>
+                    {(() => {
+                      const selectedProject = projects.find(p => p.id === editedProjectId)
+                      if (selectedProject?.repo_url) {
+                        return (
+                          <div className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-400 text-sm">
+                            {selectedProject.repo_url}
+                          </div>
+                        )
+                      }
+                      const filteredRepos = repoQuery
+                        ? allRepos.filter(r =>
+                            r.full_name.toLowerCase().includes(repoQuery.toLowerCase()) ||
+                            (r.description && r.description.toLowerCase().includes(repoQuery.toLowerCase()))
+                          )
+                        : allRepos.slice(0, 10)
+                      return (
+                        <>
+                          <input
+                            ref={repoInputRef}
+                            type="text"
+                            value={repoQuery || editedRepoUrl}
+                            onChange={e => {
+                              setRepoQuery(e.target.value)
+                              setEditedRepoUrl(e.target.value)
+                              setShowRepoSuggestions(true)
+                            }}
+                            onFocus={() => setShowRepoSuggestions(true)}
+                            onBlur={() => setTimeout(() => setShowRepoSuggestions(false), 200)}
+                            placeholder="Search repos or paste URL..."
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white placeholder:text-zinc-500 focus:outline-none focus:border-orange-500 text-sm"
+                          />
+                          {showRepoSuggestions && filteredRepos.length > 0 && (
+                            <div className="absolute z-10 w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg max-h-48 overflow-y-auto">
+                              {filteredRepos.map(r => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onMouseDown={() => {
+                                    setEditedRepoUrl(r.html_url)
+                                    setRepoQuery(r.full_name)
+                                    setShowRepoSuggestions(false)
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-zinc-700 text-sm transition-colors"
+                                >
+                                  <span className="text-white">{r.full_name}</span>
+                                  {r.language && (
+                                    <span className="text-zinc-500 ml-2">{r.language}</span>
+                                  )}
+                                  {r.description && (
+                                    <p className="text-xs text-zinc-500 truncate">{r.description}</p>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                  </div>
+
                   {/* Outcome Tier + Type */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -606,6 +683,21 @@ export function BriefDetailPanel({
                     </div>
                     <span className="text-lg font-bold text-orange-400">{brief.impact_score}/10</span>
                   </div>
+                </div>
+              )}
+
+              {/* Repo URL */}
+              {brief.repo_url && !isEditing && (
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-400 mb-2">Repository</h3>
+                  <a
+                    href={brief.repo_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-orange-400 hover:text-orange-300 underline underline-offset-2"
+                  >
+                    {brief.repo_url}
+                  </a>
                 </div>
               )}
 

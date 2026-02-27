@@ -72,8 +72,21 @@ Briefs are evaluated against a 4-tier hierarchy. Lower tiers are more important 
 ## Prerequisites
 
 - **Node.js** 18+
-- **Claude Code CLI** installed and authenticated with a Claude Pro/Max subscription. The agents spawn `claude -p` as child processes — this uses your Claude subscription, not the Anthropic API. Install it from [claude.ai/download](https://claude.ai/download).
+- **Claude Code CLI** installed — the agents spawn `claude -p` as child processes. Install from [claude.ai/download](https://claude.ai/download).
 - **Supabase** instance (self-hosted or cloud) with the schema applied
+
+### How agent costs work
+
+The Forge runs all its agents through the Claude Code CLI. You have two options for how you pay:
+
+| Option | How it works | Cost model | Tradeoff |
+|--------|-------------|------------|----------|
+| **Claude Pro/Max subscription** | Authenticate Claude Code with your Anthropic account. Agents use your subscription allowance. | Fixed monthly fee (from $20/month) | Your machine must stay running while builds process, or install on a cloud server (DigitalOcean, AWS, etc.) |
+| **Anthropic API key** | Set `ANTHROPIC_API_KEY` in your `.env.local`. The CLI detects it and bills per-token. | Pay-per-use (~$0.50–$5 per full pipeline run depending on complexity) | No subscription needed, but costs scale with usage |
+
+**If you already have a Claude Pro or Max subscription**, you can run The Forge at no additional cost beyond your existing subscription. The tradeoff is that the orchestrator needs to be running continuously to process the queue — so either keep your laptop open, or install it on a VPS ($5–10/month on DigitalOcean or similar).
+
+For most solo operators, the subscription route is significantly cheaper if you're running more than a handful of builds per month.
 
 ## Setup
 
@@ -103,6 +116,8 @@ Create a `.env.local` file in the project root:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-instance.example.com
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# Only needed if using API key billing (omit if using your Claude subscription)
 ANTHROPIC_API_KEY=your-anthropic-api-key
 ```
 
