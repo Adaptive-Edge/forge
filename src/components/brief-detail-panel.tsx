@@ -2,7 +2,21 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import type { Brief, AgentEvaluation, BuildLog, AcceptanceCriterion, DeliberationRound, DecisionReport } from '@/lib/types'
+import type { Brief, AgentEvaluation, BuildLog, AcceptanceCriterion, DeliberationRound, DecisionReport, Project } from '@/lib/types'
+
+const OUTCOME_TIERS = [
+  { value: 1, name: 'Tier 1: Foundation', description: 'Health, Family' },
+  { value: 2, name: 'Tier 2: Leverage', description: 'Productivity, Efficiency' },
+  { value: 3, name: 'Tier 3: Growth', description: 'Revenue, Client Value, Project Goals' },
+  { value: 4, name: 'Tier 4: Reach', description: 'Brand Awareness, Customer Attraction' },
+]
+
+const OUTCOME_TYPES: Record<number, string[]> = {
+  1: ['Health & Wellbeing', 'Family'],
+  2: ['Productivity & Time', 'Efficiency'],
+  3: ['Revenue Potential', 'Client Value', 'Project Goals'],
+  4: ['Brand Awareness', 'Customer Attraction'],
+}
 
 const TIER_COLORS: Record<number, string> = {
   1: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
@@ -65,6 +79,14 @@ export function BriefDetailPanel({
   const [isEditing, setIsEditing] = useState(false)
   const [editedBrief, setEditedBrief] = useState(brief.brief)
   const [editedTitle, setEditedTitle] = useState(brief.title)
+  const [editedOutcomeTier, setEditedOutcomeTier] = useState(brief.outcome_tier || 2)
+  const [editedOutcomeType, setEditedOutcomeType] = useState(brief.outcome_type || 'Productivity & Time')
+  const [editedImpactScore, setEditedImpactScore] = useState(brief.impact_score || 5)
+  const [editedFastTrack, setEditedFastTrack] = useState(brief.fast_track || false)
+  const [editedAutoDeploy, setEditedAutoDeploy] = useState(brief.auto_deploy || false)
+  const [editedBriefType, setEditedBriefType] = useState<'build' | 'run'>((brief.brief_type as 'build' | 'run') || 'build')
+  const [editedProjectId, setEditedProjectId] = useState(brief.project_id || '')
+  const [projects, setProjects] = useState<Project[]>([])
   const [evaluations, setEvaluations] = useState<AgentEvaluation[]>([])
   const [buildLogs, setBuildLogs] = useState<BuildLog[]>([])
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>([])
@@ -72,6 +94,13 @@ export function BriefDetailPanel({
   const [decisionReport, setDecisionReport] = useState<DecisionReport | null>(null)
   const [feedbackText, setFeedbackText] = useState('')
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.from('projects').select('*').order('name').then(({ data }) => {
+      if (data) setProjects(data)
+    })
+  }, [])
 
   useEffect(() => {
     const supabase = createClient()
@@ -156,8 +185,15 @@ export function BriefDetailPanel({
   useEffect(() => {
     setEditedBrief(brief.brief)
     setEditedTitle(brief.title)
+    setEditedOutcomeTier(brief.outcome_tier || 2)
+    setEditedOutcomeType(brief.outcome_type || 'Productivity & Time')
+    setEditedImpactScore(brief.impact_score || 5)
+    setEditedFastTrack(brief.fast_track || false)
+    setEditedAutoDeploy(brief.auto_deploy || false)
+    setEditedBriefType((brief.brief_type as 'build' | 'run') || 'build')
+    setEditedProjectId(brief.project_id || '')
     setIsEditing(false)
-  }, [brief.id, brief.brief, brief.title])
+  }, [brief.id, brief.brief, brief.title, brief.outcome_tier, brief.outcome_type, brief.impact_score, brief.fast_track, brief.auto_deploy, brief.brief_type, brief.project_id])
 
   const handleSave = async () => {
     const supabase = createClient()
@@ -166,6 +202,13 @@ export function BriefDetailPanel({
       .update({
         title: editedTitle,
         brief: editedBrief,
+        brief_type: editedBriefType,
+        project_id: editedProjectId || null,
+        outcome_tier: editedOutcomeTier,
+        outcome_type: editedOutcomeType,
+        impact_score: editedImpactScore,
+        fast_track: editedFastTrack,
+        auto_deploy: editedAutoDeploy,
         updated_at: new Date().toISOString(),
       })
       .eq('id', brief.id)
@@ -382,6 +425,150 @@ export function BriefDetailPanel({
                   <p className="text-sm text-zinc-300">{brief.brief}</p>
                 )}
               </div>
+
+              {/* Editable fields */}
+              {isEditing && (
+                <div className="space-y-4">
+                  {/* Brief Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1">Type</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setEditedBriefType('build'); setEditedAutoDeploy(false) }}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                          editedBriefType === 'build'
+                            ? 'bg-blue-600/20 text-blue-400 border-blue-500/50'
+                            : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-600'
+                        }`}
+                      >
+                        Build
+                        <span className="block text-xs text-zinc-500 font-normal mt-0.5">Code changes, PR</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setEditedBriefType('run'); setEditedAutoDeploy(false) }}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                          editedBriefType === 'run'
+                            ? 'bg-violet-600/20 text-violet-400 border-violet-500/50'
+                            : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:border-zinc-600'
+                        }`}
+                      >
+                        Run
+                        <span className="block text-xs text-zinc-500 font-normal mt-0.5">Decks, docs, tasks</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Project */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1">Project</label>
+                    <select
+                      value={editedProjectId}
+                      onChange={e => setEditedProjectId(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                    >
+                      <option value="">Unassigned</option>
+                      {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Outcome Tier + Type */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1">Outcome Tier</label>
+                      <select
+                        value={editedOutcomeTier}
+                        onChange={e => {
+                          const tier = Number(e.target.value)
+                          setEditedOutcomeTier(tier)
+                          setEditedOutcomeType(OUTCOME_TYPES[tier][0])
+                        }}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                      >
+                        {OUTCOME_TIERS.map(t => (
+                          <option key={t.value} value={t.value}>{t.name}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        {OUTCOME_TIERS.find(t => t.value === editedOutcomeTier)?.description}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1">Outcome Type</label>
+                      <select
+                        value={editedOutcomeType}
+                        onChange={e => setEditedOutcomeType(e.target.value)}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500"
+                      >
+                        {OUTCOME_TYPES[editedOutcomeTier].map(type => (
+                          <option key={type} value={type}>{type}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Impact Score */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1">
+                      Impact Score: <span className="text-orange-400">{editedImpactScore}/10</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      value={editedImpactScore}
+                      onChange={e => setEditedImpactScore(Number(e.target.value))}
+                      className="w-full accent-orange-500"
+                    />
+                    <div className="flex justify-between text-xs text-zinc-500">
+                      <span>Low impact</span>
+                      <span>High impact</span>
+                    </div>
+                  </div>
+
+                  {/* Pipeline Mode */}
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-zinc-400">Pipeline Mode</label>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          checked={editedFastTrack}
+                          onChange={e => setEditedFastTrack(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-zinc-700 rounded-full peer-checked:bg-orange-600 transition-colors" />
+                        <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
+                      </div>
+                      <div>
+                        <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">Fast-track</span>
+                        <p className="text-xs text-zinc-500">Skip evaluation panel and critic</p>
+                      </div>
+                    </label>
+                    {editedBriefType === 'build' && (
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            checked={editedAutoDeploy}
+                            onChange={e => setEditedAutoDeploy(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-zinc-700 rounded-full peer-checked:bg-red-600 transition-colors" />
+                          <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
+                        </div>
+                        <div>
+                          <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">Auto-deploy</span>
+                          <p className="text-xs text-zinc-500">Merge PR and deploy automatically</p>
+                        </div>
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Acceptance Criteria */}
               {criteria.length > 0 && (
