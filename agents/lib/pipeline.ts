@@ -93,7 +93,7 @@ export async function runEvaluation(briefId: string): Promise<boolean> {
 
   const settled2 = await Promise.allSettled(
     round1Agents.map(async (agent) => {
-      const output = await callClaude(deliberationPrompt(brief, round1ForPrompt))
+      const { result: output, inputTokens, outputTokens, model } = await callClaude(deliberationPrompt(brief, round1ForPrompt))
       const result = parseEvaluation(output)
 
       const round1Verdict = round1Results.find(r => r.slug === agent.slug)?.result.verdict
@@ -101,10 +101,10 @@ export async function runEvaluation(briefId: string): Promise<boolean> {
 
       if (revisedFrom) {
         console.log(`  [${agent.name}] REVISED: ${revisedFrom} -> ${result.verdict}: ${result.reasoning}`)
-        await logBuild(briefId, agent.name, `Revised verdict: ${revisedFrom} \u2192 ${result.verdict} \u2014 ${result.reasoning}`)
+        await logBuild(briefId, agent.name, `Revised verdict: ${revisedFrom} \u2192 ${result.verdict} \u2014 ${result.reasoning}`, 'info', undefined, { inputTokens, outputTokens, model })
       } else {
         console.log(`  [${agent.name}] Held firm: ${result.verdict}: ${result.reasoning}`)
-        await logBuild(briefId, agent.name, `Held firm: ${result.verdict} \u2014 ${result.reasoning}`)
+        await logBuild(briefId, agent.name, `Held firm: ${result.verdict} \u2014 ${result.reasoning}`, 'info', undefined, { inputTokens, outputTokens, model })
       }
 
       return { slug: agent.slug, result, revisedFrom }
@@ -210,7 +210,7 @@ export async function runPlanning(briefId: string): Promise<boolean> {
   const context = loadAgentContext(localPath)
 
   try {
-    const plan = await callClaude(context + architectPrompt(brief), {
+    const { result: plan, inputTokens, outputTokens, model } = await callClaude(context + architectPrompt(brief), {
       model: 'opus',
       ...(localPath && {
         cwd: localPath,
@@ -221,7 +221,7 @@ export async function runPlanning(briefId: string): Promise<boolean> {
     await updateBrief(briefId, { architect_plan: plan })
 
     const firstLine = plan.split('\n').find(l => l.trim()) || 'Plan created'
-    await logBuild(briefId, 'Architect', `Plan complete: ${firstLine.substring(0, 100)}`)
+    await logBuild(briefId, 'Architect', `Plan complete: ${firstLine.substring(0, 100)}`, 'info', undefined, { inputTokens, outputTokens, model })
     console.log(`  [Architect] Plan complete (${plan.length} chars)`)
 
     return true
@@ -250,7 +250,7 @@ export async function runCriticReview(briefId: string): Promise<boolean> {
 
   for (let revision = 0; revision < MAX_REVISIONS; revision++) {
     try {
-      const output = await callClaude(criticPrompt(brief, currentPlan), { model: 'sonnet' })
+      const { result: output, inputTokens, outputTokens, model } = await callClaude(criticPrompt(brief, currentPlan), { model: 'sonnet' })
       const result = parseEvaluation(output)
 
       // Store Critic's evaluation
@@ -265,7 +265,9 @@ export async function runCriticReview(briefId: string): Promise<boolean> {
         briefId,
         'Critic',
         `${emoji} Plan ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
-        result.verdict === 'reject' ? 'warn' : 'info'
+        result.verdict === 'reject' ? 'warn' : 'info',
+        undefined,
+        { inputTokens, outputTokens, model }
       )
       console.log(`  [Critic] ${result.verdict}: ${result.reasoning}`)
 
@@ -280,7 +282,7 @@ export async function runCriticReview(briefId: string): Promise<boolean> {
 
         const localPath = brief.project?.local_path
         const context = loadAgentContext(localPath)
-        const revisedPlan = await callClaude(
+        const { result: revisedPlan, inputTokens: rIn, outputTokens: rOut, model: rModel } = await callClaude(
           context + architectRevisionPrompt(brief, currentPlan, result.reasoning),
           {
             model: 'opus',
@@ -293,7 +295,7 @@ export async function runCriticReview(briefId: string): Promise<boolean> {
 
         currentPlan = revisedPlan
         await updateBrief(briefId, { architect_plan: revisedPlan })
-        await logBuild(briefId, 'Architect', `Plan revised (v${revision + 2}) addressing Critic feedback`)
+        await logBuild(briefId, 'Architect', `Plan revised (v${revision + 2}) addressing Critic feedback`, 'info', undefined, { inputTokens: rIn, outputTokens: rOut, model: rModel })
         console.log(`  [Architect] Plan revised (v${revision + 2})`)
       }
     } catch (err) {
@@ -342,7 +344,7 @@ export async function runBuilding(briefId: string): Promise<boolean> {
   try {
     const prompt = builderPrompt(brief, brief.architect_plan)
 
-    const output = await callClaude(context + prompt, {
+    const { result: output, inputTokens, outputTokens, model } = await callClaude(context + prompt, {
       model: 'opus',
       cwd,
       allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
@@ -355,7 +357,7 @@ export async function runBuilding(briefId: string): Promise<boolean> {
       await logBuild(briefId, 'Builder', `PR created: ${prMatch[0]}`)
     }
 
-    await logBuild(briefId, 'Builder', 'Build complete')
+    await logBuild(briefId, 'Builder', 'Build complete', 'info', undefined, { inputTokens, outputTokens, model })
     console.log('  [Builder] Build complete')
     return true
   } catch (err) {
@@ -430,7 +432,7 @@ export async function runTask(briefId: string): Promise<boolean> {
   try {
     const prompt = taskRunnerPrompt(brief, brief.architect_plan)
 
-    const output = await callClaude(context + prompt, {
+    const { result: output, inputTokens, outputTokens, model } = await callClaude(context + prompt, {
       model: 'opus',
       cwd,
       allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
@@ -451,7 +453,7 @@ export async function runTask(briefId: string): Promise<boolean> {
       await logBuild(briefId, 'Task Runner', 'Task complete (no output paths detected)', 'warn')
     }
 
-    await logBuild(briefId, 'Task Runner', 'Task complete')
+    await logBuild(briefId, 'Task Runner', 'Task complete', 'info', undefined, { inputTokens, outputTokens, model })
     console.log('  [Task Runner] Complete')
     return true
   } catch (err) {
@@ -478,7 +480,7 @@ export async function runDeployment(briefId: string): Promise<boolean> {
   const context = loadAgentContext(localPath)
 
   try {
-    const output = await callClaude(context + deployerPrompt(brief), {
+    const { result: output, inputTokens, outputTokens, model } = await callClaude(context + deployerPrompt(brief), {
       model: 'opus',
       cwd: localPath || '/tmp',
       allowedTools: ['Read', 'Bash', 'Glob', 'Grep'],
@@ -490,10 +492,10 @@ export async function runDeployment(briefId: string): Promise<boolean> {
                    output.toLowerCase().includes('stop-work')
 
     if (failed) {
-      await logBuild(briefId, 'Deployer', `Deployment had issues — check logs`, 'warn')
+      await logBuild(briefId, 'Deployer', `Deployment had issues — check logs`, 'warn', undefined, { inputTokens, outputTokens, model })
       console.log('  [Deployer] Deployment had issues')
     } else {
-      await logBuild(briefId, 'Deployer', 'Deployment complete and verified')
+      await logBuild(briefId, 'Deployer', 'Deployment complete and verified', 'info', undefined, { inputTokens, outputTokens, model })
       console.log('  [Deployer] Deployment complete')
     }
 
@@ -524,7 +526,7 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
     console.log(`  [Architect] Revising plan (v${revisionNumber + 1})...`)
 
     try {
-      const revisedPlan = await callClaude(
+      const { result: revisedPlan, inputTokens, outputTokens, model } = await callClaude(
         context + architectFeedbackPrompt(brief, brief.architect_plan, feedback, revisionNumber),
         {
           model: 'opus',
@@ -536,7 +538,7 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
       )
 
       await updateBrief(briefId, { architect_plan: revisedPlan })
-      await logBuild(briefId, 'Architect', `Plan revised (v${revisionNumber + 1}) addressing Nathan's feedback`)
+      await logBuild(briefId, 'Architect', `Plan revised (v${revisionNumber + 1}) addressing Nathan's feedback`, 'info', undefined, { inputTokens, outputTokens, model })
       console.log(`  [Architect] Plan revised (v${revisionNumber + 1})`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -573,16 +575,110 @@ export async function runRevision(briefId: string, feedback: string, revisionNum
   }
 }
 
-export async function advancePipeline(briefId: string): Promise<void> {
+export async function resumeFromPlan(briefId: string): Promise<void> {
+  console.log(`\n--- Pipeline: resuming from plan for brief ${briefId} ---`)
+
   const brief = await fetchBriefWithProject(briefId)
   const isFastTrack = brief.fast_track
   const isAutoDeploy = brief.auto_deploy
   const isRunBrief = brief.brief_type === 'run'
 
+  await logBuild(briefId, 'Pipeline', 'Resuming pipeline from plan stage...')
+
+  // Planning
+  const planned = await runPlanning(briefId)
+  if (!planned) {
+    console.log('  [Pipeline] Planning failed on resume')
+    return
+  }
+
+  // Critic review (skip if fast-track)
+  if (!isFastTrack) {
+    await runCriticReview(briefId)
+  }
+
+  // Execute
+  if (isRunBrief) {
+    const ran = await runTask(briefId)
+    if (!ran) {
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      return
+    }
+    await updateBrief(briefId, { status: 'review', pipeline_stage: 'task_complete' })
+    await logBuild(briefId, 'Pipeline', 'Resume pipeline complete — deliverables created')
+  } else {
+    const built = await runBuilding(briefId)
+    if (!built) {
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      return
+    }
+
+    await runBrandReview(briefId)
+
+    if (isAutoDeploy) {
+      const deployed = await runDeployment(briefId)
+      if (!deployed) {
+        await logBuild(briefId, 'Pipeline', 'Auto-deploy failed on resume', 'warn')
+        await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+        return
+      }
+      await updateBrief(briefId, { status: 'done', pipeline_stage: 'deploy_complete' })
+      await logBuild(briefId, 'Pipeline', 'Resume pipeline complete — built and deployed')
+    }
+  }
+}
+
+export async function processFromBuild(briefId: string): Promise<void> {
+  console.log(`\n--- Pipeline: processing from build for brief ${briefId} (plan approved) ---`)
+
+  const brief = await fetchBriefWithProject(briefId)
+  const isAutoDeploy = brief.auto_deploy
+  const isRunBrief = brief.brief_type === 'run'
+
+  await logBuild(briefId, 'Pipeline', 'Plan approved — proceeding to build...')
+
+  if (isRunBrief) {
+    const ran = await runTask(briefId)
+    if (!ran) {
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      return
+    }
+    await updateBrief(briefId, { status: 'review', pipeline_stage: 'task_complete' })
+    await logBuild(briefId, 'Pipeline', 'Pipeline complete — deliverables created')
+  } else {
+    const built = await runBuilding(briefId)
+    if (!built) {
+      await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+      return
+    }
+
+    await runBrandReview(briefId)
+
+    if (isAutoDeploy) {
+      const deployed = await runDeployment(briefId)
+      if (!deployed) {
+        await logBuild(briefId, 'Pipeline', 'Auto-deploy failed — moved to review', 'warn')
+        await updateBrief(briefId, { status: 'review', pipeline_stage: null })
+        return
+      }
+      await updateBrief(briefId, { status: 'done', pipeline_stage: 'deploy_complete' })
+      await logBuild(briefId, 'Pipeline', 'Pipeline complete — built and deployed')
+    }
+  }
+}
+
+export async function advancePipeline(briefId: string): Promise<void> {
+  const brief = await fetchBriefWithProject(briefId)
+  const isFastTrack = brief.fast_track
+  const isAutoDeploy = brief.auto_deploy
+  const isRunBrief = brief.brief_type === 'run'
+  const requirePlanApproval = brief.require_plan_approval
+
   const mode = [
     isFastTrack ? 'fast-track' : 'full',
     isRunBrief ? 'run' : 'build',
     isAutoDeploy ? '+ auto-deploy' : '',
+    requirePlanApproval ? '+ plan-approval' : '',
   ].filter(Boolean).join(' ')
   console.log(`\n--- Pipeline: advancing brief ${briefId} (${mode}) ---`)
   await logBuild(briefId, 'Pipeline', `Pipeline started in ${mode} mode`)
@@ -605,6 +701,14 @@ export async function advancePipeline(briefId: string): Promise<void> {
   if (!planned) {
     console.log('  [Pipeline] Planning failed, moving to review')
     return
+  }
+
+  // Step 2.5: Plan approval gate (if enabled)
+  if (requirePlanApproval) {
+    await updateBrief(briefId, { pipeline_stage: 'plan_approval' })
+    await logBuild(briefId, 'Pipeline', 'Plan requires approval — pausing pipeline. Review the plan and approve to continue.')
+    console.log('  [Pipeline] Plan approval required — pipeline paused')
+    return // Pipeline pauses here — orchestrator watches for plan_approved transition
   }
 
   // Step 3: Critic review (skip if fast-track)

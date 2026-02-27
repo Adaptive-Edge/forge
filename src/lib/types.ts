@@ -28,6 +28,7 @@ export type Brief = {
   inputs: Record<string, unknown> | null
   target_machine: string | null
   created_by: string | null
+  require_plan_approval: boolean
 }
 
 export type Project = {
@@ -63,6 +64,9 @@ export type BuildLog = {
   action: string | null
   details: Record<string, unknown> | null
   log_level: string
+  input_tokens: number | null
+  output_tokens: number | null
+  model: string | null
 }
 
 export type AcceptanceCriterion = {

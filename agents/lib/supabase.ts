@@ -15,7 +15,8 @@ export async function logBuild(
   agent: string,
   action: string,
   level: string = 'info',
-  details?: Record<string, unknown>
+  details?: Record<string, unknown>,
+  usage?: { inputTokens?: number; outputTokens?: number; model?: string }
 ) {
   await supabase.from('build_logs').insert({
     brief_id: briefId,
@@ -23,6 +24,9 @@ export async function logBuild(
     action,
     log_level: level,
     ...(details && { details }),
+    ...(usage?.inputTokens && { input_tokens: usage.inputTokens }),
+    ...(usage?.outputTokens && { output_tokens: usage.outputTokens }),
+    ...(usage?.model && { model: usage.model }),
   })
 }
 

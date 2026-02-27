@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 import { createClient } from '@supabase/supabase-js'
-import { spawn } from 'child_process'
+import { callClaude } from './lib/claude'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -16,39 +16,6 @@ const OUTCOME_TIERS: Record<number, string> = {
   2: 'Leverage (Productivity, Efficiency)',
   3: 'Growth (Revenue, Client Value)',
   4: 'Reach (Brand, Customer Attraction)',
-}
-
-function callClaude(prompt: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env }
-    delete env.CLAUDECODE
-    const proc = spawn('claude', ['-p', '--model', 'haiku'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env,
-      cwd: '/tmp',
-    })
-
-    let stdout = ''
-    let stderr = ''
-    proc.stdout.on('data', (data: Buffer) => { stdout += data.toString() })
-    proc.stderr.on('data', (data: Buffer) => { stderr += data.toString() })
-
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Claude exited with code ${code}: ${stderr}`))
-      } else {
-        resolve(stdout.trim())
-      }
-    })
-
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to spawn claude: ${err.message}`))
-    })
-
-    // Pipe prompt via stdin (avoids CLI arg length issues)
-    proc.stdin.write(prompt)
-    proc.stdin.end()
-  })
 }
 
 async function evaluateBrief(briefId: string) {
@@ -112,7 +79,7 @@ Respond with ONLY valid JSON (no markdown fences, no commentary, no extra text b
 {"verdict":"approve","reasoning":"2-3 sentences explaining your decision","suggested_tier":2,"suggested_impact":7,"confidence":8}`
 
   try {
-    const output = await callClaude(prompt)
+    const { result: output } = await callClaude(prompt)
 
     // Extract JSON from response
     const jsonMatch = output.match(/\{[\s\S]*\}/)

@@ -13,10 +13,18 @@ export function DroppableColumn({
   column,
   count,
   children,
+  className,
+  selectMode,
+  allSelected,
+  onSelectAll,
 }: {
   column: Column
   count: number
   children: ReactNode
+  className?: string
+  selectMode?: boolean
+  allSelected?: boolean
+  onSelectAll?: (checked: boolean) => void
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: column.id,
@@ -25,15 +33,29 @@ export function DroppableColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col rounded-xl p-4 min-h-[500px] transition-colors ${
+      className={`flex-col rounded-xl p-4 min-h-[500px] transition-colors ${
         isOver
           ? 'bg-zinc-700/50 ring-2 ring-blue-500/50'
           : 'bg-zinc-900'
-      }`}
+      } ${className || 'flex'}`}
     >
       {/* Column header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
+          {selectMode && count > 0 && (
+            <button
+              onClick={() => onSelectAll?.(!allSelected)}
+              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                allSelected ? 'bg-orange-600 border-orange-500' : 'border-zinc-600 hover:border-zinc-400'
+              }`}
+            >
+              {allSelected && (
+                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </button>
+          )}
           <span className="text-lg">{column.icon}</span>
           <h2 className="font-semibold text-zinc-200">{column.name}</h2>
         </div>

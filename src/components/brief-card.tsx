@@ -11,11 +11,36 @@ const TIER_COLORS: Record<number, string> = {
   4: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
 }
 
-export function BriefCardContent({ brief, projectName }: { brief: Brief; projectName?: string }) {
+export function BriefCardContent({
+  brief,
+  projectName,
+  selectMode,
+  selected,
+}: {
+  brief: Brief
+  projectName?: string
+  selectMode?: boolean
+  selected?: boolean
+}) {
   return (
-    <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-700 hover:border-zinc-600 transition-colors cursor-pointer">
+    <div className={`bg-zinc-800 rounded-lg p-3 border transition-colors cursor-pointer ${
+      selected ? 'border-orange-500 ring-1 ring-orange-500/30' : 'border-zinc-700 hover:border-zinc-600'
+    }`}>
       <div className="flex items-start justify-between gap-2 mb-2">
-        <h3 className="font-medium text-sm leading-tight">{brief.title}</h3>
+        <div className="flex items-start gap-2">
+          {selectMode && (
+            <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+              selected ? 'bg-orange-600 border-orange-500' : 'border-zinc-600'
+            }`}>
+              {selected && (
+                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </div>
+          )}
+          <h3 className="font-medium text-sm leading-tight">{brief.title}</h3>
+        </div>
         {brief.outcome_tier && (
           <span className={`text-xs px-1.5 py-0.5 rounded border shrink-0 ${TIER_COLORS[brief.outcome_tier] || ''}`}>
             T{brief.outcome_tier}
@@ -59,6 +84,7 @@ export function BriefCardContent({ brief, projectName }: { brief: Brief; project
            brief.pipeline_stage === 'task_complete' ? 'Task complete' :
            brief.pipeline_stage === 'deploying' ? 'Deploying...' :
            brief.pipeline_stage === 'deploy_complete' ? 'Deployed' :
+           brief.pipeline_stage === 'plan_approval' ? 'Awaiting approval...' :
            brief.status === 'evaluating' ? 'Evaluating...' :
            'Processing...'}
         </div>
@@ -80,10 +106,16 @@ export function SortableBriefCard({
   brief,
   projectName,
   onClick,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   brief: Brief
   projectName?: string
   onClick?: () => void
+  selectMode?: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
 }) {
   const {
     attributes,
@@ -92,7 +124,7 @@ export function SortableBriefCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: brief.id })
+  } = useSortable({ id: brief.id, disabled: selectMode })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -104,13 +136,17 @@ export function SortableBriefCard({
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      {...(selectMode ? {} : { ...attributes, ...listeners })}
       onClick={() => {
         if (!isDragging && onClick) onClick()
       }}
     >
-      <BriefCardContent brief={brief} projectName={projectName} />
+      <BriefCardContent
+        brief={brief}
+        projectName={projectName}
+        selectMode={selectMode}
+        selected={selected}
+      />
     </div>
   )
 }

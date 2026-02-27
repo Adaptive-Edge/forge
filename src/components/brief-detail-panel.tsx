@@ -43,8 +43,10 @@ const FAST_BUILD_STAGES = ['planning', 'building', 'brand_review']
 const FULL_RUN_STAGES = ['gatekeeper', 'deliberating', 'voting', 'planning', 'critic_review', 'running']
 const FAST_RUN_STAGES = ['planning', 'running']
 const DEPLOY_SUFFIX = ['deploying']
+const PLAN_APPROVAL_SUFFIX = ['plan_approval']
 
 const PIPELINE_LABELS: Record<string, string> = {
+  plan_approval: 'Approve',
   gatekeeper: 'Evaluate',
   deliberating: 'Deliberate',
   voting: 'Vote',
@@ -61,7 +63,10 @@ function getPipelineStages(brief: Brief): string[] {
   const base = brief.fast_track
     ? (isRun ? FAST_RUN_STAGES : FAST_BUILD_STAGES)
     : (isRun ? FULL_RUN_STAGES : FULL_BUILD_STAGES)
-  return brief.auto_deploy && !isRun ? [...base, ...DEPLOY_SUFFIX] : base
+  let stages = brief.require_plan_approval
+    ? [...base.slice(0, base.indexOf('building') >= 0 ? base.indexOf('building') : base.indexOf('running')), ...PLAN_APPROVAL_SUFFIX, ...base.slice(base.indexOf('building') >= 0 ? base.indexOf('building') : base.indexOf('running'))]
+    : base
+  return brief.auto_deploy && !isRun ? [...stages, ...DEPLOY_SUFFIX] : stages
 }
 
 export function BriefDetailPanel({
@@ -84,6 +89,7 @@ export function BriefDetailPanel({
   const [editedImpactScore, setEditedImpactScore] = useState(brief.impact_score || 5)
   const [editedFastTrack, setEditedFastTrack] = useState(brief.fast_track || false)
   const [editedAutoDeploy, setEditedAutoDeploy] = useState(brief.auto_deploy || false)
+  const [editedRequirePlanApproval, setEditedRequirePlanApproval] = useState(brief.require_plan_approval || false)
   const [editedBriefType, setEditedBriefType] = useState<'build' | 'run'>((brief.brief_type as 'build' | 'run') || 'build')
   const [editedProjectId, setEditedProjectId] = useState(brief.project_id || '')
   const [editedRepoUrl, setEditedRepoUrl] = useState(brief.repo_url || '')
@@ -198,6 +204,7 @@ export function BriefDetailPanel({
     setEditedImpactScore(brief.impact_score || 5)
     setEditedFastTrack(brief.fast_track || false)
     setEditedAutoDeploy(brief.auto_deploy || false)
+    setEditedRequirePlanApproval(brief.require_plan_approval || false)
     setEditedBriefType((brief.brief_type as 'build' | 'run') || 'build')
     setEditedProjectId(brief.project_id || '')
     setEditedRepoUrl(brief.repo_url || '')
@@ -223,6 +230,7 @@ export function BriefDetailPanel({
         impact_score: editedImpactScore,
         fast_track: editedFastTrack,
         auto_deploy: editedAutoDeploy,
+        require_plan_approval: editedRequirePlanApproval,
         updated_at: new Date().toISOString(),
       })
       .eq('id', brief.id)
@@ -329,7 +337,7 @@ export function BriefDetailPanel({
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative w-full max-w-2xl bg-zinc-900 border-l border-zinc-800 overflow-y-auto">
+      <div className="relative w-full md:max-w-2xl bg-zinc-900 border-l border-zinc-800 overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-zinc-900 border-b border-zinc-800 p-4 z-10">
           <div className="flex items-start justify-between gap-4">
@@ -643,6 +651,22 @@ export function BriefDetailPanel({
                         </div>
                       </label>
                     )}
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          checked={editedRequirePlanApproval}
+                          onChange={e => setEditedRequirePlanApproval(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-zinc-700 rounded-full peer-checked:bg-blue-600 transition-colors" />
+                        <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4" />
+                      </div>
+                      <div>
+                        <span className="text-sm text-zinc-300 group-hover:text-white transition-colors">Require plan approval</span>
+                        <p className="text-xs text-zinc-500">Pause pipeline after planning for review</p>
+                      </div>
+                    </label>
                   </div>
                 </div>
               )}
@@ -783,6 +807,7 @@ export function BriefDetailPanel({
                      brief.pipeline_stage === 'running' ? 'Running task...' :
                      brief.pipeline_stage === 'brand_review' ? 'Brand reviewing...' :
                      brief.pipeline_stage === 'deploying' ? 'Deploying to production...' :
+                     brief.pipeline_stage === 'plan_approval' ? 'Awaiting plan approval...' :
                      'Processing...'}
                   </div>
                 ) : evaluations.length > 0 ? (
@@ -978,6 +1003,48 @@ export function BriefDetailPanel({
                 </div>
               )}
 
+              {/* Plan approval buttons */}
+              {brief.pipeline_stage === 'plan_approval' && brief.architect_plan && (
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={async () => {
+                      const supabase = createClient()
+                      await supabase.from('briefs').update({
+                        pipeline_stage: 'plan_approved',
+                        updated_at: new Date().toISOString(),
+                      }).eq('id', brief.id)
+                    }}
+                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Approve Plan
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const feedback = prompt('What needs to change?')
+                      if (!feedback) return
+                      const supabase = createClient()
+                      // Count existing revisions
+                      const { count } = await supabase
+                        .from('revision_requests')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('brief_id', brief.id)
+                      await supabase.from('revision_requests').insert({
+                        brief_id: brief.id,
+                        feedback,
+                        revision_number: (count || 0) + 1,
+                      })
+                      await supabase.from('briefs').update({
+                        pipeline_stage: 'planning',
+                        updated_at: new Date().toISOString(),
+                      }).eq('id', brief.id)
+                    }}
+                    className="flex-1 py-2 bg-red-600/80 hover:bg-red-600 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Reject Plan
+                  </button>
+                </div>
+              )}
+
               {brief.architect_plan ? (
                 <div className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
                   <pre className="text-sm text-zinc-300 whitespace-pre-wrap font-sans leading-relaxed">
@@ -1007,6 +1074,76 @@ export function BriefDetailPanel({
               <p className="text-xs text-zinc-500 mb-4">
                 Build activity and progress logs
               </p>
+
+              {/* Token summary */}
+              {(() => {
+                const totalIn = buildLogs.reduce((sum, l) => sum + (l.input_tokens || 0), 0)
+                const totalOut = buildLogs.reduce((sum, l) => sum + (l.output_tokens || 0), 0)
+                if (totalIn === 0 && totalOut === 0) return null
+                // Rough cost estimate (Haiku: $0.25/1M in, $1.25/1M out; Sonnet: $3/1M in, $15/1M out; Opus: $15/1M in, $75/1M out)
+                // Use a blended estimate since we don't know exact model mix
+                const estCost = (totalIn * 3 + totalOut * 15) / 1_000_000
+                return (
+                  <div className="bg-zinc-800 rounded-lg p-3 border border-zinc-700 mb-3 text-xs text-zinc-400">
+                    Tokens: {totalIn.toLocaleString()} in / {totalOut.toLocaleString()} out
+                    <span className="text-zinc-600"> &middot; </span>
+                    Est. cost: ${estCost.toFixed(2)}
+                  </div>
+                )
+              })()}
+
+              {/* Retry buttons for stalled builds */}
+              {brief.status === 'building' && brief.pipeline_stage && (() => {
+                const lastLog = buildLogs[buildLogs.length - 1]
+                const isStalled = lastLog && (Date.now() - new Date(lastLog.timestamp).getTime()) > 5 * 60 * 1000
+                if (!isStalled) return null
+                return (
+                  <div className="bg-amber-900/20 rounded-lg p-3 border border-amber-700/50 mb-3">
+                    <p className="text-xs text-amber-400 mb-2">Build appears stalled (no activity for 5+ minutes)</p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          const supabase = createClient()
+                          await supabase.from('briefs').update({
+                            status: 'evaluating',
+                            pipeline_stage: null,
+                            updated_at: new Date().toISOString(),
+                          }).eq('id', brief.id)
+                        }}
+                        className="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs transition-colors"
+                      >
+                        Full Re-evaluate
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const supabase = createClient()
+                          await supabase.from('briefs').update({
+                            pipeline_stage: 'resume_from_plan',
+                            updated_at: new Date().toISOString(),
+                          }).eq('id', brief.id)
+                        }}
+                        className="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs transition-colors"
+                      >
+                        Resume from Plan
+                      </button>
+                      <button
+                        onClick={async () => {
+                          const supabase = createClient()
+                          await supabase.from('briefs').update({
+                            status: 'evaluating',
+                            pipeline_stage: brief.pipeline_stage,
+                            updated_at: new Date().toISOString(),
+                          }).eq('id', brief.id)
+                        }}
+                        className="px-3 py-1 bg-amber-700 hover:bg-amber-600 rounded text-xs transition-colors"
+                      >
+                        Retry Current Stage
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
+
               {buildLogs.length > 0 ? (
                 <div className="space-y-2 font-mono text-xs">
                   {buildLogs.map((log) => (
@@ -1022,6 +1159,11 @@ export function BriefDetailPanel({
                         </span>
                       )}
                       <span>{log.action}</span>
+                      {(log.input_tokens || log.output_tokens) && (
+                        <span className="text-zinc-600 shrink-0">
+                          ({log.input_tokens?.toLocaleString() || 0}/{log.output_tokens?.toLocaleString() || 0})
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>

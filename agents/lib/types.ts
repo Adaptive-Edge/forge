@@ -5,6 +5,7 @@ export type PipelineStage =
   | 'voting'
   | 'planning'
   | 'critic_review'
+  | 'plan_approval'
   | 'building'
   | 'brand_review'
   | 'build_complete'
@@ -12,6 +13,13 @@ export type PipelineStage =
   | 'task_complete'
   | 'deploying'
   | 'deploy_complete'
+
+export type ClaudeResult = {
+  result: string
+  inputTokens: number
+  outputTokens: number
+  model: string
+}
 
 export type Verdict = 'approve' | 'reject' | 'concern'
 
@@ -70,6 +78,7 @@ export type BriefWithProject = {
   architect_plan: string | null
   fast_track: boolean
   auto_deploy: boolean
+  require_plan_approval: boolean
   output_path: string | null
   project?: {
     name: string

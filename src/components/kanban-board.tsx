@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -20,8 +20,9 @@ import {
 import { SortableBriefCard, BriefCardContent } from './brief-card'
 import { DroppableColumn } from './droppable-column'
 import { BriefDetailPanel } from './brief-detail-panel'
+import { MobileColumnTabs } from './mobile-column-tabs'
 import { createClient } from '@/lib/supabase'
-import type { Brief, Project } from '@/lib/types'
+import type { Brief } from '@/lib/types'
 
 const COLUMNS = [
   { id: 'intake', name: 'Intake', icon: '\u{1F4E5}' },
@@ -30,12 +31,31 @@ const COLUMNS = [
   { id: 'done', name: 'Done', icon: '\u2705' },
 ]
 
-export function KanbanBoard() {
-  const [briefs, setBriefs] = useState<Brief[]>([])
-  const [projects, setProjects] = useState<Record<string, string>>({})
+type Props = {
+  briefs: Brief[]
+  projects: Record<string, string>
+  selectedBrief: Brief | null
+  onSelectBrief: (b: Brief | null) => void
+  onStatusChange: (briefId: string, newStatus: string) => void
+  selectMode: boolean
+  selectedIds: Set<string>
+  onToggleSelect: (id: string) => void
+  loading: boolean
+}
+
+export function KanbanBoard({
+  briefs,
+  projects,
+  selectedBrief,
+  onSelectBrief,
+  onStatusChange,
+  selectMode,
+  selectedIds,
+  onToggleSelect,
+  loading,
+}: Props) {
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [selectedBrief, setSelectedBrief] = useState<Brief | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [activeColumn, setActiveColumn] = useState('intake')
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -46,46 +66,6 @@ export function KanbanBoard() {
     })
   )
 
-  useEffect(() => {
-    const supabase = createClient()
-
-    async function load() {
-      const [briefsRes, projectsRes] = await Promise.all([
-        supabase.from('briefs').select('*').order('created_at', { ascending: false }),
-        supabase.from('projects').select('*'),
-      ])
-
-      if (briefsRes.data) setBriefs(briefsRes.data)
-      if (projectsRes.data) {
-        const map: Record<string, string> = {}
-        projectsRes.data.forEach((p: Project) => { map[p.id] = p.name })
-        setProjects(map)
-      }
-      setLoading(false)
-    }
-    load()
-
-    // Realtime subscription
-    const channel = supabase
-      .channel('briefs-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'briefs' }, (payload) => {
-        setBriefs(prev => [payload.new as Brief, ...prev])
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'briefs' }, (payload) => {
-        const updated = payload.new as Brief
-        setBriefs(prev => prev.map(b => b.id === updated.id ? updated : b))
-        setSelectedBrief(prev => prev?.id === updated.id ? updated : prev)
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'briefs' }, (payload) => {
-        const deleted = payload.old as { id: string }
-        setBriefs(prev => prev.filter(b => b.id !== deleted.id))
-        setSelectedBrief(prev => prev?.id === deleted.id ? null : prev)
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [])
-
   const getBriefsForColumn = (columnId: string) => {
     if (columnId === 'intake') {
       return briefs.filter(b => b.status === 'intake' || b.status === 'evaluating')
@@ -94,13 +74,14 @@ export function KanbanBoard() {
   }
 
   const handleDragStart = (event: DragStartEvent) => {
+    if (selectMode) return
     setActiveId(event.active.id as string)
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     setActiveId(null)
-    if (!over) return
+    if (!over || selectMode) return
 
     const briefId = active.id as string
     const overId = over.id as string
@@ -110,59 +91,20 @@ export function KanbanBoard() {
     const brief = briefs.find(b => b.id === briefId)
     if (!brief || brief.status === targetColumn.id) return
 
-    // Optimistic update
-    setBriefs(prev => prev.map(b =>
-      b.id === briefId ? { ...b, status: targetColumn.id } : b
-    ))
-
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('briefs')
-      .update({ status: targetColumn.id, updated_at: new Date().toISOString() })
-      .eq('id', briefId)
-
-    if (error) {
-      // Revert on failure
-      setBriefs(prev => prev.map(b =>
-        b.id === briefId ? { ...b, status: brief.status } : b
-      ))
-      console.error('Failed to update brief status:', error)
-    }
-  }
-
-  const handleStatusChange = async (briefId: string, newStatus: string) => {
-    const brief = briefs.find(b => b.id === briefId)
-    if (!brief) return
-
-    setBriefs(prev => prev.map(b =>
-      b.id === briefId ? { ...b, status: newStatus } : b
-    ))
-    setSelectedBrief(prev =>
-      prev?.id === briefId ? { ...prev, status: newStatus } : prev
-    )
-
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('briefs')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', briefId)
-
-    if (error) {
-      setBriefs(prev => prev.map(b =>
-        b.id === briefId ? { ...b, status: brief.status } : b
-      ))
-      setSelectedBrief(prev =>
-        prev?.id === briefId ? { ...prev, status: brief.status } : prev
-      )
-      console.error('Failed to update brief status:', error)
-    }
+    onStatusChange(briefId, targetColumn.id)
   }
 
   const activeBrief = activeId ? briefs.find(b => b.id === activeId) : null
 
+  // Column counts for mobile tabs
+  const columnCounts = COLUMNS.reduce((acc, col) => {
+    acc[col.id] = getBriefsForColumn(col.id).length
+    return acc
+  }, {} as Record<string, number>)
+
   if (loading) {
     return (
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {COLUMNS.map(col => (
           <div key={col.id} className="bg-zinc-900 rounded-xl p-4 min-h-[500px] animate-pulse">
             <div className="h-6 bg-zinc-800 rounded w-24 mb-4" />
@@ -174,17 +116,41 @@ export function KanbanBoard() {
 
   return (
     <>
+      {/* Mobile column tabs */}
+      <div className="md:hidden mb-4">
+        <MobileColumnTabs
+          columns={COLUMNS}
+          counts={columnCounts}
+          activeColumn={activeColumn}
+          onColumnChange={setActiveColumn}
+        />
+      </div>
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {COLUMNS.map(column => {
             const columnBriefs = getBriefsForColumn(column.id)
+            const isActiveOnMobile = column.id === activeColumn
             return (
-              <DroppableColumn key={column.id} column={column} count={columnBriefs.length}>
+              <DroppableColumn
+                key={column.id}
+                column={column}
+                count={columnBriefs.length}
+                className={isActiveOnMobile ? 'flex' : 'hidden md:flex'}
+                selectMode={selectMode}
+                allSelected={columnBriefs.length > 0 && columnBriefs.every(b => selectedIds.has(b.id))}
+                onSelectAll={(checked) => {
+                  columnBriefs.forEach(b => {
+                    if (checked && !selectedIds.has(b.id)) onToggleSelect(b.id)
+                    if (!checked && selectedIds.has(b.id)) onToggleSelect(b.id)
+                  })
+                }}
+              >
                 <SortableContext
                   items={columnBriefs.map(b => b.id)}
                   strategy={verticalListSortingStrategy}
@@ -194,7 +160,16 @@ export function KanbanBoard() {
                       key={brief.id}
                       brief={brief}
                       projectName={brief.project_id ? projects[brief.project_id] : undefined}
-                      onClick={() => setSelectedBrief(brief)}
+                      onClick={() => {
+                        if (selectMode) {
+                          onToggleSelect(brief.id)
+                        } else {
+                          onSelectBrief(brief)
+                        }
+                      }}
+                      selectMode={selectMode}
+                      selected={selectedIds.has(brief.id)}
+                      onToggleSelect={() => onToggleSelect(brief.id)}
                     />
                   ))}
                 </SortableContext>
@@ -224,8 +199,8 @@ export function KanbanBoard() {
         <BriefDetailPanel
           brief={selectedBrief}
           projectName={selectedBrief.project_id ? projects[selectedBrief.project_id] : undefined}
-          onClose={() => setSelectedBrief(null)}
-          onStatusChange={(newStatus) => handleStatusChange(selectedBrief.id, newStatus)}
+          onClose={() => onSelectBrief(null)}
+          onStatusChange={(newStatus) => onStatusChange(selectedBrief.id, newStatus)}
         />
       )}
     </>

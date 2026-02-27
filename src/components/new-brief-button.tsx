@@ -1,36 +1,29 @@
 'use client'
 
-import { useState } from 'react'
-import { NewBriefModal, type BriefDefaultValues } from './new-brief-modal'
 import { VoiceBriefButton } from './voice-brief-button'
+import type { BriefDefaultValues } from './new-brief-modal'
 
-export function NewBriefButton() {
-  const [isOpen, setIsOpen] = useState(false)
-  const [defaultValues, setDefaultValues] = useState<BriefDefaultValues | undefined>()
-
-  const openModal = (values?: BriefDefaultValues) => {
-    setDefaultValues(values)
-    setIsOpen(true)
-  }
-
-  const closeModal = () => {
-    setIsOpen(false)
-    setDefaultValues(undefined)
-  }
-
+export function NewBriefButton({
+  isOpen,
+  onOpen,
+  onClose,
+}: {
+  isOpen: boolean
+  onOpen: (values?: BriefDefaultValues) => void
+  onClose: () => void
+}) {
   return (
     <div className="flex items-center gap-2">
       <VoiceBriefButton
-        onBriefReady={(brief) => openModal(brief)}
+        onBriefReady={(brief) => onOpen(brief)}
       />
       <button
-        onClick={() => openModal()}
+        onClick={() => onOpen()}
         className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
       >
         <span>+</span>
         <span>New Brief</span>
       </button>
-      {isOpen && <NewBriefModal onClose={closeModal} defaultValues={defaultValues} />}
     </div>
   )
 }

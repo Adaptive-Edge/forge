@@ -1,5 +1,6 @@
 import { spawn } from 'child_process'
 import { existsSync } from 'fs'
+import type { ClaudeResult } from './types'
 
 // Mac → server path mappings for when orchestrator runs on server
 const PATH_MAPPINGS: [string, string][] = [
@@ -25,7 +26,7 @@ export function callClaude(
     cwd?: string
     allowedTools?: string[]
   } = {}
-): Promise<string> {
+): Promise<ClaudeResult> {
   let { model = 'haiku', cwd = '/tmp', allowedTools } = options
 
   // Resolve cwd — local_path may be a Mac path when running on server
@@ -46,7 +47,7 @@ export function callClaude(
     const env = { ...process.env }
     delete env.CLAUDECODE
 
-    const args = ['-p', '--model', model]
+    const args = ['-p', '--model', model, '--output-format', 'json']
     if (allowedTools) {
       args.push('--allowedTools', ...allowedTools)
     }
@@ -65,8 +66,26 @@ export function callClaude(
     proc.on('close', (code) => {
       if (code !== 0) {
         reject(new Error(`Claude exited with code ${code}: ${stderr}`))
-      } else {
-        resolve(stdout.trim())
+        return
+      }
+
+      // Try to parse JSON output format
+      try {
+        const parsed = JSON.parse(stdout.trim())
+        resolve({
+          result: parsed.result || parsed.content || stdout.trim(),
+          inputTokens: parsed.input_tokens || parsed.usage?.input_tokens || 0,
+          outputTokens: parsed.output_tokens || parsed.usage?.output_tokens || 0,
+          model: parsed.model || model,
+        })
+      } catch {
+        // Fallback: raw text output (e.g. older Claude CLI)
+        resolve({
+          result: stdout.trim(),
+          inputTokens: 0,
+          outputTokens: 0,
+          model,
+        })
       }
     })
 

@@ -1,7 +1,7 @@
 import { callClaude } from './claude'
 import { logBuild, writeEvaluation } from './supabase'
 import { gatekeeperPrompt, skepticPrompt, cynicPrompt, accountantPrompt, brandGuardianPrompt, type BriefHistoryItem } from './prompts'
-import type { BriefWithProject, EvaluationResult } from './types'
+import type { BriefWithProject, EvaluationResult, ClaudeResult } from './types'
 
 export type BrandConcern = {
   file: string
@@ -36,108 +36,112 @@ export async function runGatekeeper(brief: BriefWithProject, history?: BriefHist
   await logBuild(brief.id, 'Gatekeeper', 'Evaluating brief against outcome hierarchy...')
   console.log('  [Gatekeeper] Evaluating...')
 
-  const output = await callClaude(gatekeeperPrompt(brief, history))
-  const result = parseEvaluation(output)
+  const { result, inputTokens, outputTokens, model } = await callClaude(gatekeeperPrompt(brief, history))
+  const evaluation = parseEvaluation(result)
 
   await writeEvaluation(brief.id, 'gatekeeper', 'strategic_filter', {
-    verdict: result.verdict,
-    reasoning: result.reasoning,
+    verdict: evaluation.verdict,
+    reasoning: evaluation.reasoning,
     suggestions: {
-      suggested_tier: result.suggested_tier,
-      suggested_impact: result.suggested_impact,
+      suggested_tier: evaluation.suggested_tier,
+      suggested_impact: evaluation.suggested_impact,
     },
-    confidence: result.confidence,
+    confidence: evaluation.confidence,
   })
 
-  const emoji = result.verdict === 'approve' ? '\u2713' : result.verdict === 'reject' ? '\u2717' : '\u26A0'
+  const emoji = evaluation.verdict === 'approve' ? '\u2713' : evaluation.verdict === 'reject' ? '\u2717' : '\u26A0'
   await logBuild(
     brief.id,
     'Gatekeeper',
-    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
-    result.verdict === 'reject' ? 'warn' : 'info',
-    result as unknown as Record<string, unknown>
+    `${emoji} Brief ${evaluation.verdict === 'approve' ? 'approved' : evaluation.verdict + 'ed'} \u2014 ${evaluation.reasoning}`,
+    evaluation.verdict === 'reject' ? 'warn' : 'info',
+    evaluation as unknown as Record<string, unknown>,
+    { inputTokens, outputTokens, model }
   )
 
-  console.log(`  [Gatekeeper] ${result.verdict}: ${result.reasoning}`)
-  return result
+  console.log(`  [Gatekeeper] ${evaluation.verdict}: ${evaluation.reasoning}`)
+  return evaluation
 }
 
 export async function runSkeptic(brief: BriefWithProject, _history?: BriefHistoryItem[]): Promise<EvaluationResult> {
   await logBuild(brief.id, 'Skeptic', 'Challenging brief assumptions...')
   console.log('  [Skeptic] Evaluating...')
 
-  const output = await callClaude(skepticPrompt(brief))
-  const result = parseEvaluation(output)
+  const { result, inputTokens, outputTokens, model } = await callClaude(skepticPrompt(brief))
+  const evaluation = parseEvaluation(result)
 
   await writeEvaluation(brief.id, 'skeptic', 'devils_advocate', {
-    verdict: result.verdict,
-    reasoning: result.reasoning,
-    confidence: result.confidence,
+    verdict: evaluation.verdict,
+    reasoning: evaluation.reasoning,
+    confidence: evaluation.confidence,
   })
 
-  const emoji = result.verdict === 'approve' ? '\u2713' : result.verdict === 'reject' ? '\u2717' : '\u26A0'
+  const emoji = evaluation.verdict === 'approve' ? '\u2713' : evaluation.verdict === 'reject' ? '\u2717' : '\u26A0'
   await logBuild(
     brief.id,
     'Skeptic',
-    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
-    result.verdict === 'reject' ? 'warn' : 'info',
-    result as unknown as Record<string, unknown>
+    `${emoji} Brief ${evaluation.verdict === 'approve' ? 'approved' : evaluation.verdict + 'ed'} \u2014 ${evaluation.reasoning}`,
+    evaluation.verdict === 'reject' ? 'warn' : 'info',
+    evaluation as unknown as Record<string, unknown>,
+    { inputTokens, outputTokens, model }
   )
 
-  console.log(`  [Skeptic] ${result.verdict}: ${result.reasoning}`)
-  return result
+  console.log(`  [Skeptic] ${evaluation.verdict}: ${evaluation.reasoning}`)
+  return evaluation
 }
 
 export async function runCynic(brief: BriefWithProject, history?: BriefHistoryItem[]): Promise<EvaluationResult> {
   await logBuild(brief.id, 'Cynic', 'Checking for patterns and displacement activity...')
   console.log('  [Cynic] Evaluating...')
 
-  const output = await callClaude(cynicPrompt(brief, history))
-  const result = parseEvaluation(output)
+  const { result, inputTokens, outputTokens, model } = await callClaude(cynicPrompt(brief, history))
+  const evaluation = parseEvaluation(result)
 
   await writeEvaluation(brief.id, 'cynic', 'behavioural_check', {
-    verdict: result.verdict,
-    reasoning: result.reasoning,
-    confidence: result.confidence,
+    verdict: evaluation.verdict,
+    reasoning: evaluation.reasoning,
+    confidence: evaluation.confidence,
   })
 
-  const emoji = result.verdict === 'approve' ? '\u2713' : result.verdict === 'reject' ? '\u2717' : '\u26A0'
+  const emoji = evaluation.verdict === 'approve' ? '\u2713' : evaluation.verdict === 'reject' ? '\u2717' : '\u26A0'
   await logBuild(
     brief.id,
     'Cynic',
-    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
-    result.verdict === 'reject' ? 'warn' : 'info',
-    result as unknown as Record<string, unknown>
+    `${emoji} Brief ${evaluation.verdict === 'approve' ? 'approved' : evaluation.verdict + 'ed'} \u2014 ${evaluation.reasoning}`,
+    evaluation.verdict === 'reject' ? 'warn' : 'info',
+    evaluation as unknown as Record<string, unknown>,
+    { inputTokens, outputTokens, model }
   )
 
-  console.log(`  [Cynic] ${result.verdict}: ${result.reasoning}`)
-  return result
+  console.log(`  [Cynic] ${evaluation.verdict}: ${evaluation.reasoning}`)
+  return evaluation
 }
 
 export async function runAccountant(brief: BriefWithProject, history?: BriefHistoryItem[]): Promise<EvaluationResult> {
   await logBuild(brief.id, 'Accountant', 'Calculating cost vs return...')
   console.log('  [Accountant] Evaluating...')
 
-  const output = await callClaude(accountantPrompt(brief, history))
-  const result = parseEvaluation(output)
+  const { result, inputTokens, outputTokens, model } = await callClaude(accountantPrompt(brief, history))
+  const evaluation = parseEvaluation(result)
 
   await writeEvaluation(brief.id, 'accountant', 'cost_analysis', {
-    verdict: result.verdict,
-    reasoning: result.reasoning,
-    confidence: result.confidence,
+    verdict: evaluation.verdict,
+    reasoning: evaluation.reasoning,
+    confidence: evaluation.confidence,
   })
 
-  const emoji = result.verdict === 'approve' ? '\u2713' : result.verdict === 'reject' ? '\u2717' : '\u26A0'
+  const emoji = evaluation.verdict === 'approve' ? '\u2713' : evaluation.verdict === 'reject' ? '\u2717' : '\u26A0'
   await logBuild(
     brief.id,
     'Accountant',
-    `${emoji} Brief ${result.verdict === 'approve' ? 'approved' : result.verdict + 'ed'} \u2014 ${result.reasoning}`,
-    result.verdict === 'reject' ? 'warn' : 'info',
-    result as unknown as Record<string, unknown>
+    `${emoji} Brief ${evaluation.verdict === 'approve' ? 'approved' : evaluation.verdict + 'ed'} \u2014 ${evaluation.reasoning}`,
+    evaluation.verdict === 'reject' ? 'warn' : 'info',
+    evaluation as unknown as Record<string, unknown>,
+    { inputTokens, outputTokens, model }
   )
 
-  console.log(`  [Accountant] ${result.verdict}: ${result.reasoning}`)
-  return result
+  console.log(`  [Accountant] ${evaluation.verdict}: ${evaluation.reasoning}`)
+  return evaluation
 }
 
 export async function runBrandGuardian(brief: BriefWithProject): Promise<BrandGuardianResult> {
@@ -149,7 +153,7 @@ export async function runBrandGuardian(brief: BriefWithProject): Promise<BrandGu
   await logBuild(brief.id, 'Brand Guardian', 'Reviewing PR for design system violations...')
   console.log('  [Brand Guardian] Reviewing PR diff...')
 
-  const output = await callClaude(brandGuardianPrompt(brief, prUrl), {
+  const { result: output, inputTokens, outputTokens, model } = await callClaude(brandGuardianPrompt(brief, prUrl), {
     model: 'sonnet',
     ...(localPath && {
       cwd: localPath,
@@ -161,7 +165,7 @@ export async function runBrandGuardian(brief: BriefWithProject): Promise<BrandGu
   if (!jsonMatch) throw new Error('No JSON found in Brand Guardian response')
 
   const parsed = JSON.parse(jsonMatch[0])
-  const result: BrandGuardianResult = {
+  const evaluation: BrandGuardianResult = {
     verdict: parsed.verdict,
     reasoning: parsed.reasoning,
     confidence: Math.min(10, Math.max(1, parsed.confidence || 5)),
@@ -169,26 +173,27 @@ export async function runBrandGuardian(brief: BriefWithProject): Promise<BrandGu
   }
 
   await writeEvaluation(brief.id, 'brand-guardian', 'brand_review', {
-    verdict: result.verdict,
-    reasoning: result.reasoning,
-    confidence: result.confidence,
-    suggestions: result.concerns.length > 0 ? { concerns: result.concerns } : undefined,
+    verdict: evaluation.verdict,
+    reasoning: evaluation.reasoning,
+    confidence: evaluation.confidence,
+    suggestions: evaluation.concerns.length > 0 ? { concerns: evaluation.concerns } : undefined,
   })
 
-  const emoji = result.verdict === 'approve' ? '\u2713' : result.verdict === 'reject' ? '\u2717' : '\u26A0'
-  const concernSummary = result.concerns.length > 0
-    ? ` (${result.concerns.length} violation${result.concerns.length === 1 ? '' : 's'} found)`
+  const emoji = evaluation.verdict === 'approve' ? '\u2713' : evaluation.verdict === 'reject' ? '\u2717' : '\u26A0'
+  const concernSummary = evaluation.concerns.length > 0
+    ? ` (${evaluation.concerns.length} violation${evaluation.concerns.length === 1 ? '' : 's'} found)`
     : ''
   await logBuild(
     brief.id,
     'Brand Guardian',
-    `${emoji} Brand review: ${result.verdict}${concernSummary} \u2014 ${result.reasoning}`,
-    result.verdict === 'approve' ? 'info' : 'warn',
-    { concerns: result.concerns } as unknown as Record<string, unknown>
+    `${emoji} Brand review: ${evaluation.verdict}${concernSummary} \u2014 ${evaluation.reasoning}`,
+    evaluation.verdict === 'approve' ? 'info' : 'warn',
+    { concerns: evaluation.concerns } as unknown as Record<string, unknown>,
+    { inputTokens, outputTokens, model }
   )
 
-  console.log(`  [Brand Guardian] ${result.verdict}: ${result.reasoning}${concernSummary}`)
-  return result
+  console.log(`  [Brand Guardian] ${evaluation.verdict}: ${evaluation.reasoning}${concernSummary}`)
+  return evaluation
 }
 
 export { parseEvaluation }
